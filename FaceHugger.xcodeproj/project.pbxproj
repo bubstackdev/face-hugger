@@ -27,6 +27,7 @@
 		7956D9382720D9CD42C462D2 /* DatasetCardWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8475F9179774E1D91D394C03 /* DatasetCardWorkspace.swift */; };
 		79EB87BEDB6D9B1CDE60B021 /* NativeHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC5A7E94FB4DED75F32190C8 /* NativeHub.swift */; };
 		8734AF0B610CE2F6526CECF0 /* DatasetCardGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADB094A89E339A6CB5C06865 /* DatasetCardGenerator.swift */; };
+		8879C4FF2BAA5CEA0674A723 /* DatasetCardDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EC14F55C7316A1E4BAD2C03 /* DatasetCardDraft.swift */; };
 		930076E3A957091B48AC4123 /* BenchTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 793A9EA74C7F945CC4335129 /* BenchTheme.swift */; };
 		A2E4F09F3BA1CA40F61307D1 /* BenchControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A275FB7C1D328FEF9992FD0F /* BenchControls.swift */; };
 		AA80942DE40DA75EB0CAAE29 /* FaceHuggerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B08B1B834B330777FB43249 /* FaceHuggerApp.swift */; };
@@ -38,6 +39,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0EC14F55C7316A1E4BAD2C03 /* DatasetCardDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatasetCardDraft.swift; sourceTree = "<group>"; };
 		178D04E28616B38CB6A6099F /* DatasetCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatasetCard.swift; sourceTree = "<group>"; };
 		23E38AE063AD922F4F3D7EEF /* NativeScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeScanner.swift; sourceTree = "<group>"; };
 		546F2134440F288C49195F86 /* DatasetCardSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatasetCardSheet.swift; sourceTree = "<group>"; };
@@ -75,6 +77,7 @@
 			children = (
 				9EF3511780814F5054B3B62F /* BridgeProtocol.swift */,
 				178D04E28616B38CB6A6099F /* DatasetCard.swift */,
+				0EC14F55C7316A1E4BAD2C03 /* DatasetCardDraft.swift */,
 				7791707A7AB42494EDDDC717 /* FolderAccess.swift */,
 				CEEA1D44DC5B7FFD67051296 /* Models.swift */,
 				E7351C6BE191A1E4D0708395 /* NativeComparison.swift */,
@@ -216,6 +219,7 @@
 				930076E3A957091B48AC4123 /* BenchTheme.swift in Sources */,
 				3A1D0357188C467015340AB1 /* BridgeProtocol.swift in Sources */,
 				614AB5785FE985FF735D1147 /* DatasetCard.swift in Sources */,
+				8879C4FF2BAA5CEA0674A723 /* DatasetCardDraft.swift in Sources */,
 				8734AF0B610CE2F6526CECF0 /* DatasetCardGenerator.swift in Sources */,
 				C8699FB4B2DBABBB08BEC3E2 /* DatasetCardSheet.swift in Sources */,
 				7956D9382720D9CD42C462D2 /* DatasetCardWorkspace.swift in Sources */,
