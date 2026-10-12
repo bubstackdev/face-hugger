@@ -25,6 +25,8 @@ targets:
         buildPhase: resources
       - path: Resources/PythonFnmatchLicense.txt
         buildPhase: resources
+      - path: Resources/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.zakkeown.FaceHugger

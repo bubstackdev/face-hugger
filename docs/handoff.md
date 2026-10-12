@@ -1,3 +1,13 @@
+## Current state — October 12, 2026 (read first)
+
+**Build 7** (`5970101a-89ed-4a6c-a0bb-e88ab42217e6`) is uploaded, VALID (`usesNonExemptEncryption=false`) and attached to the 1.0 draft in place of build 6. The draft reads back with build 7. `asc validate --strict --check-urls` reports 0 errors, warnings and blockers; the info items are manual release and the unverifiable App Privacy publish state.
+
+Build 7 adds `Resources/PrivacyInfo.xcprivacy`, which wasn't in builds 1–6. It declares FileTimestamp `3B52.1` (lstat, fstat and contentModificationDateKey on user-selected folders) and collected data matching the published label: User ID and Other User Content, linked, App Functionality, no tracking. That label is a deliberate, user-approved disclosure: data goes only from the user's Mac to their own Hugging Face account, and none reaches Bubstack. The in-app privacy link now points to https://bubstack.dev/face-hugger/privacy.html.
+
+Checks passed: `swift test` (46 XCTest, 25 Swift Testing), the Python tests (56, 3 skipped), `Scripts/package-store.sh`'s native-only audit, and the Bubstack release kit (`bubstack-release.json`: `archive --distribution` and `privacy` on `dist/store/FaceHugger-1.0-7.pkg`). Upload, wait and attach receipts are in `.build/app-store-private/`.
+
+**Not submitted for review.** Release type is MANUAL.
+
 # Face Hugger handoff — October 2, 2026
 
 ## Current outcome — build 6 attached

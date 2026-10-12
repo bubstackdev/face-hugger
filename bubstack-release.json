@@ -1,0 +1,17 @@
+{
+  "bundleId": "dev.zakkeown.FaceHugger",
+  "teamId": "3FMAPDQDGP",
+  "privacy": {
+    "NSPrivacyAccessedAPICategoryFileTimestamp": ["3B52.1"]
+  },
+  "collectedData": [
+    {"type": "NSPrivacyCollectedDataTypeUserID", "linked": true, "purposes": ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]},
+    {"type": "NSPrivacyCollectedDataTypeOtherUserContent", "linked": true, "purposes": ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]}
+  ],
+  "entitlements": {
+    "com.apple.security.app-sandbox": true,
+    "com.apple.security.files.bookmarks.app-scope": true,
+    "com.apple.security.files.user-selected.read-write": true,
+    "com.apple.security.network.client": true
+  }
+}
