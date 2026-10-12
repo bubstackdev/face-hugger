@@ -66,7 +66,9 @@ public enum DatasetCardDrafter {
     /// only an HTML `<h1>`–`<h6>` element), keeping the text beneath as plain paragraphs. The
     /// template supplies all of the card's structure.
     static func removingHeadings(from text: String) -> String {
-        let lines = text.components(separatedBy: .newlines)
+        // CRLF and lone CR become LF first, so a setext underline stays on the very next line.
+        let normalized = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        let lines = normalized.components(separatedBy: .newlines)
         var kept: [String] = [], index = 0
         while index < lines.count {
             let line = lines[index]

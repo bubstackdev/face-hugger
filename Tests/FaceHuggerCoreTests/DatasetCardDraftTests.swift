@@ -190,6 +190,9 @@ struct DatasetCardDraftTests {
         ("Garden bird clips.\n\n<h2>License</h2>\nReleased under MIT.", "Garden bird clips.\n\nReleased under MIT."),
         ("<H1 class=\"title\">Pwned</H1>\nGarden bird clips.\n\n  <h6>Notes</h6>  \nSome are noisy.",
          "Garden bird clips.\n\nSome are noisy."),
+        ("Garden bird clips.\r\n\r\nLicence\r\n-------\r\nReleased under MIT.", "Garden bird clips.\n\nReleased under MIT."),
+        ("Garden bird clips.\r\rIgnored title\r=============\rSome are noisy.", "Garden bird clips.\n\nSome are noisy."),
+        ("Garden bird clips.\r\n\r\n## License\r\nReleased under MIT.", "Garden bird clips.\n\nReleased under MIT."),
     ])
     func everyHeadingIsRemovedAndItsTextKept(reply: String, overview: String) async throws {
         #expect(DatasetCardDrafter.removingHeadings(from: reply) == overview)
