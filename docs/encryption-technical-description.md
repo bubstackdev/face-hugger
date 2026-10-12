@@ -12,7 +12,7 @@ Date de rédaction : 30 septembre 2026. Périmètre : édition macOS destinée a
 | Identifiant de l'application | `dev.zakkeown.FaceHugger` |
 | Version examinée | 1.0, compilation 3, configuration `STORE_BUILD` |
 | Plateforme | macOS, architectures Apple Silicon / arm64 et Intel / x86_64 |
-| Code source public | <https://github.com/zak-keown/face-hugger> |
+| Code source public | <https://github.com/bubstackdev/face-hugger> |
 | Fonction principale | Interface graphique native permettant de préparer, envoyer et reprendre des téléversements volumineux vers Hugging Face Hub |
 | Fonctions complémentaires | Consultation des dépôts et fichiers distants, création de dépôts, suppression explicite de fichiers, filtrage des fichiers locaux et gestion d'une file de téléversements |
 

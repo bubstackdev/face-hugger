@@ -17,7 +17,7 @@ Le build 3 est marqué usesNonExemptEncryption=true. La commande d'association a
 - Le formulaire officiel ANSSI original, conservé sans modification, est fourni séparément sous le nom ANSSI-formulaire-officiel-XFA.pdf.
 - Les pages suivantes constituent une fiche de préparation pour les rubriques du formulaire.
 - La description technique décrit les composants réellement distribués et distingue les capacités des bibliothèques des paramètres négociés sur une connexion réelle.
-- Le guide public du produit et le code source sont accessibles sur https://github.com/zak-keown/face-hugger.
+- Le guide public du produit et le code source sont accessibles sur https://github.com/bubstackdev/face-hugger.
 
 ## Limite du formulaire officiel
 
