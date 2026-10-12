@@ -20,6 +20,7 @@
 		5D3403C6423FB92F0D77A13F /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4429FC49D860F2CEB1BA756 /* AppModel.swift */; };
 		614AB5785FE985FF735D1147 /* DatasetCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 178D04E28616B38CB6A6099F /* DatasetCard.swift */; };
 		6245C0905AE4F4A28AEEFFE2 /* RepoBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5EDCD000E7270D10DD2876E /* RepoBrowser.swift */; };
+		6742F26D945441688BE09D62 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A4DA2A63187CCBACC256EF84 /* PrivacyInfo.xcprivacy */; };
 		6751B6349658099D26F02582 /* TransferShelf.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBFFB7614BA91DFE1FAACA70 /* TransferShelf.swift */; };
 		77C0E3775BF2F6CB2CE83C5B /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E04D4F232BBF187F37D6ED3F /* MainView.swift */; };
 		784599E0D4965552F26864F4 /* PythonFnmatchLicense.txt in Resources */ = {isa = PBXBuildFile; fileRef = 8E996F46C446C41B84102AA8 /* PythonFnmatchLicense.txt */; };
@@ -52,6 +53,7 @@
 		9EF3511780814F5054B3B62F /* BridgeProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeProtocol.swift; sourceTree = "<group>"; };
 		A2050DFC39D4E98D1893B50F /* Services.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services.swift; sourceTree = "<group>"; };
 		A275FB7C1D328FEF9992FD0F /* BenchControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchControls.swift; sourceTree = "<group>"; };
+		A4DA2A63187CCBACC256EF84 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A509241EB73D444B8EBF2EC9 /* UploadQueueControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadQueueControl.swift; sourceTree = "<group>"; };
 		A5EDCD000E7270D10DD2876E /* RepoBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepoBrowser.swift; sourceTree = "<group>"; };
 		A8BEBDC316A4528BCF27BAA7 /* FaceHugger.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FaceHugger.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -113,6 +115,7 @@
 			isa = PBXGroup;
 			children = (
 				551CCA4B4D77240C93F7DE7F /* Assets.xcassets */,
+				A4DA2A63187CCBACC256EF84 /* PrivacyInfo.xcprivacy */,
 				8E996F46C446C41B84102AA8 /* PythonFnmatchLicense.txt */,
 			);
 			path = Resources;
@@ -196,6 +199,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				44C49A71382B06A9FC2A17DF /* Assets.xcassets in Resources */,
+				6742F26D945441688BE09D62 /* PrivacyInfo.xcprivacy in Resources */,
 				784599E0D4965552F26864F4 /* PythonFnmatchLicense.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -242,6 +246,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -292,7 +297,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -328,6 +333,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -372,7 +378,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

@@ -2,11 +2,12 @@ name: FaceHugger
 options:
   bundleIdPrefix: dev.zakkeown
   deploymentTarget:
-    macOS: '15.0'
+    macOS: '27.0'
 settings:
   base:
     SWIFT_VERSION: '6.0'
-    MACOSX_DEPLOYMENT_TARGET: '15.0'
+    MACOSX_DEPLOYMENT_TARGET: '27.0'
+    ARCHS: arm64
     CODE_SIGN_IDENTITY: '-'
     CODE_SIGN_STYLE: Manual
     ENABLE_HARDENED_RUNTIME: YES

@@ -23,7 +23,9 @@ audit_native_app() {
             fi
         fi
     done < <(find "$bundle" -print0)
-    for architecture in arm64 x86_64; do
+    # macOS 27 runs only on Apple silicon, so the executable must be arm64 alone.
+    [[ "$(lipo -archs "$executable")" == arm64 ]] || { echo 'Executable must contain only arm64.' >&2; return 1; }
+    for architecture in arm64; do
         lipo "$executable" -verify_arch "$architecture"
         otool -arch "$architecture" -L "$executable" > "$report_dir/dependencies-$architecture.txt"
         while IFS= read -r dependency; do
@@ -62,7 +64,7 @@ xcodegen generate --spec project-store.yml
 xcodebuild -project FaceHuggerStore.xcodeproj -scheme FaceHugger \
     -configuration Release -destination 'generic/platform=macOS' \
     -derivedDataPath .build/store-package/DerivedData \
-    'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO \
+    ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
     "CODE_SIGN_IDENTITY=$FACEHUGGER_STORE_APP_IDENTITY" \
     "PROVISIONING_PROFILE_SPECIFIER=$FACEHUGGER_STORE_PROFILE" \
     "DEVELOPMENT_TEAM=$FACEHUGGER_TEAM_ID" CODE_SIGN_STYLE=Manual \
@@ -74,9 +76,7 @@ xcodebuild -project FaceHuggerStore.xcodeproj -scheme FaceHugger \
 app='.build/store-package/DerivedData/Build/Products/Release/Face Hugger.app'
 audit_native_app "$app" .build/store-package/native-audit
 test -f "$app/Contents/embedded.provisionprofile"
-for architecture in arm64 x86_64; do
-    lipo "$app/Contents/MacOS/Face Hugger" -verify_arch "$architecture"
-done
+lipo "$app/Contents/MacOS/Face Hugger" -verify_arch arm64
 version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist")
 build=$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$app/Contents/Info.plist")
 output="dist/store/FaceHugger-$version-$build.pkg"

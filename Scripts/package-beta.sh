@@ -14,7 +14,6 @@ Environment:
   FACEHUGGER_ASC_PATH       asc executable for Notary API submission (optional).
   FACEHUGGER_ASC_PROFILE    Existing asc auth profile; used with ASC_PATH.
   FACEHUGGER_TEAM_ID        Developer team ID, if required by the identity.
-  FACEHUGGER_ARCHS          'arm64 x86_64' (default), 'arm64', or 'x86_64'.
 
 Output: dist/beta/*.dmg, matching .sha256 and build-info.txt.
 Builds use .build/beta, separately from the development app. No publishing.
@@ -41,12 +40,9 @@ elif [[ -n "$asc_path" || -n "$asc_profile" ]]; then
   fi
   notary_method=asc
 fi
-architectures=${FACEHUGGER_ARCHS:-arm64 x86_64}
-case "$architectures" in
-  'arm64 x86_64'|'x86_64 arm64') arch_label=universal ;;
-  arm64|x86_64) arch_label=$architectures ;;
-  *) echo 'FACEHUGGER_ARCHS must be arm64, x86_64, or arm64 x86_64.' >&2; exit 2 ;;
-esac
+# macOS 27 runs only on Apple silicon.
+architectures=arm64
+arch_label=arm64
 if [[ "$notary_method" != none && "$sign_identity" == '-' ]]; then
   echo 'Notarization requires a Developer ID Application signing identity.' >&2
   exit 2
@@ -150,7 +146,7 @@ cat > "$package_tmp/staging/Read Me.txt" <<README
 Face Hugger ${version} (build ${build_number}) — developer beta
 
 Drag Face Hugger.app to Applications.
-Requires macOS 15 or later. First-run upload-tool setup requires internet access.
+Requires macOS 27 or later on Apple silicon. First-run upload-tool setup requires internet access.
 Runtime tools are installed per user; they are not bundled inside this disk image.
 
 Package signing: ${signing_label}

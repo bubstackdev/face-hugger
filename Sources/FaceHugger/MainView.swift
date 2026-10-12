@@ -321,14 +321,6 @@ struct BenchUploadButton: ButtonStyle {
 private extension ToolbarContent {
     @ToolbarContentBuilder
     func benchTitleBackground() -> some ToolbarContent {
-        #if compiler(>=6.2)
-        if #available(macOS 26.0, *) {
-            self.sharedBackgroundVisibility(.hidden)
-        } else {
-            self
-        }
-        #else
-        self
-        #endif
+        self.sharedBackgroundVisibility(.hidden)
     }
 }

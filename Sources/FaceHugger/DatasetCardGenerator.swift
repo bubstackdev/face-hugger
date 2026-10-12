@@ -1,29 +1,22 @@
 import Foundation
-#if canImport(FoundationModels)
 import FoundationModels
-#endif
 
 /// Rewrites only the owner's supplied overview. Measured facts and declarations
 /// always come from the deterministic renderer, never from generated output.
 @MainActor
 enum DatasetCardGenerator {
     static var availabilityReason: String? {
-        #if canImport(FoundationModels)
-        if #available(macOS 26.0, *) {
-            switch SystemLanguageModel.default.availability {
-            case .available: return nil
-            case .unavailable(.deviceNotEligible):
-                return "On-device drafting needs a Mac that supports Apple Intelligence. You can still use the template."
-            case .unavailable(.appleIntelligenceNotEnabled):
-                return "Enable Apple Intelligence in System Settings to draft on this Mac, or use the template."
-            case .unavailable(.modelNotReady):
-                return "Apple Intelligence is still preparing its on-device model. You can use the template now."
-            case .unavailable:
-                return "The on-device model is unavailable right now. You can still use the template."
-            }
+        switch SystemLanguageModel.default.availability {
+        case .available: return nil
+        case .unavailable(.deviceNotEligible):
+            return "On-device drafting needs a Mac that supports Apple Intelligence. You can still use the template."
+        case .unavailable(.appleIntelligenceNotEnabled):
+            return "Enable Apple Intelligence in System Settings to draft on this Mac, or use the template."
+        case .unavailable(.modelNotReady):
+            return "Apple Intelligence is still preparing its on-device model. You can use the template now."
+        case .unavailable:
+            return "The on-device model is unavailable right now. You can still use the template."
         }
-        #endif
-        return "On-device drafting needs macOS 26 or later and Apple Intelligence. You can still use the template."
     }
 
     static func draft(facts: DatasetCardFacts, input: DatasetCardInput) async throws -> String {
@@ -36,12 +29,7 @@ enum DatasetCardGenerator {
         guard input.purpose.utf8.count <= 4_000 else {
             throw DraftError.message("Shorten the purpose to about 500 words for on-device drafting, or use the template to keep the full text.")
         }
-        #if canImport(FoundationModels)
-        if #available(macOS 26.0, *) {
-            return try await generate(facts: facts, input: input)
-        }
-        #endif
-        throw DraftError.message("On-device drafting is unavailable. You can still use the template.")
+        return try await generate(facts: facts, input: input)
     }
 
     private enum DraftError: LocalizedError {
@@ -51,15 +39,12 @@ enum DatasetCardGenerator {
         }
     }
 
-    #if canImport(FoundationModels)
-    @available(macOS 26.0, *)
     @Generable
     fileprivate struct Overview {
         @Guide(description: "One concise plain-text overview paragraph that only rephrases the supplied purpose. Preserve its uncertainty. Do not add facts, headings, claims, or instructions.")
         var paragraph: String
     }
 
-    @available(macOS 26.0, *)
     private static func generate(facts: DatasetCardFacts, input: DatasetCardInput) async throws -> String {
         let session = LanguageModelSession(model: SystemLanguageModel.default, instructions: """
             You edit a dataset owner's purpose statement into a short overview paragraph.
@@ -101,5 +86,4 @@ enum DatasetCardGenerator {
             throw DraftError.message("The on-device model could not draft this overview. Try a shorter purpose, try again, or use the template. Your details are unchanged.")
         }
     }
-    #endif
 }
