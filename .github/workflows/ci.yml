@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   test-and-build:
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
