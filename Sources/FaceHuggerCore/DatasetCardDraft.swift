@@ -62,73 +62,33 @@ public enum DatasetCardDrafter {
                                    maximumResponseTokens: maximumResponseTokens)
     }
 
-    /// Overview headings: the heading is dropped and its text kept, because the reply is the overview.
-    static let overviewHeadings = folded([
-        "overview", "dataset overview", "summary", "dataset summary", "description", "dataset description",
-        "descripción general", "resumen", "descripción", "überblick", "übersicht", "zusammenfassung", "beschreibung",
-        "aperçu", "vue d'ensemble", "résumé", "概要"])
-
-    /// Sections the template already provides, and the declarations it leaves to the owner (citation
-    /// among them). A model-added copy is dropped with its text, so the template's sections stay the
-    /// only ones and nothing the owner didn't write reaches them. Names cover the fixture languages.
-    static let templateHeadings = folded([
-        "files", "file inventory", "archivos", "dateien", "fichiers", "ファイル",
-        "data structure and use", "data structure", "dataset structure", "usage", "uses", "use", "intended use",
-        "intended uses", "how to use", "uso", "usos", "estructura de los datos", "verwendung", "nutzung",
-        "datenstruktur", "utilisation", "structure des données", "使い方", "用途", "データ構造",
-        "source and collection", "source", "sources", "provenance", "data collection", "collection", "origen",
-        "fuente", "quelle", "herkunft", "出典", "収集方法",
-        "license", "licence", "licensing", "license information", "licencia", "lizenz", "ライセンス",
-        "limitations", "known limitations", "bias, risks, and limitations", "limitaciones", "einschränkungen",
-        "limites", "制限事項",
-        "citation", "cite", "how to cite", "bibtex", "cita", "citación", "zitation", "zitieren", "引用"])
-
-    private static func folded(_ names: [String]) -> Set<String> { Set(names.map(fold)) }
-
-    private static func fold(_ text: String) -> String {
-        text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
-    }
-
-    /// Removes headings that duplicate the template's sections, at any Markdown level (ATX `#`–`######`
-    /// or setext). A duplicated section's text runs to the next heading and is dropped with it; other
-    /// headings and all other prose are kept as written.
-    static func removingTemplateHeadings(from text: String) -> String {
+    /// Removes every Markdown heading the model adds (ATX `#`–`######` and setext), keeping the
+    /// text beneath as plain paragraphs. The template supplies all of the card's structure.
+    static func removingHeadings(from text: String) -> String {
         let lines = text.components(separatedBy: .newlines)
-        var kept: [String] = [], skipping = false, index = 0
+        var kept: [String] = [], index = 0
         while index < lines.count {
-            var title = atxHeadingTitle(lines[index]), span = 1
-            if title == nil, index + 1 < lines.count, isSetextUnderline(lines[index + 1]),
-               !lines[index].trimmingCharacters(in: .whitespaces).isEmpty {
-                title = lines[index].trimmingCharacters(in: .whitespaces); span = 2
+            let line = lines[index]
+            if isATXHeading(line) { index += 1; continue }
+            if index + 1 < lines.count, isSetextUnderline(lines[index + 1]), !line.trimmingCharacters(in: .whitespaces).isEmpty {
+                index += 2; continue
             }
-            if let title {
-                var key = fold(title)
-                while key.hasSuffix(":") || key.hasSuffix("：") { key.removeLast() }
-                key = key.trimmingCharacters(in: .whitespaces)
-                if overviewHeadings.contains(key) { skipping = false }
-                else if templateHeadings.contains(key) { skipping = true }
-                else { skipping = false; kept += lines[index..<index + span] }
-                index += span
-                continue
-            }
-            if !skipping { kept.append(lines[index]) }
+            // Collapse the blank lines a removed heading leaves behind.
+            let blank = line.trimmingCharacters(in: .whitespaces).isEmpty
+            if !(blank && (kept.last?.trimmingCharacters(in: .whitespaces).isEmpty ?? true)) { kept.append(line) }
             index += 1
         }
         return kept.joined(separator: "\n")
     }
 
-    private static func atxHeadingTitle(_ line: String) -> String? {
+    private static func isATXHeading(_ line: String) -> Bool {
         let indent = line.prefix { $0 == " " }
-        guard indent.count <= 3 else { return nil }
+        guard indent.count <= 3 else { return false }
         let rest = line.dropFirst(indent.count)
         let hashes = rest.prefix { $0 == "#" }
-        guard (1...6).contains(hashes.count) else { return nil }
+        guard (1...6).contains(hashes.count) else { return false }
         let body = rest.dropFirst(hashes.count)
-        guard body.isEmpty || body.first == " " || body.first == "\t" else { return nil }
-        var title = body.trimmingCharacters(in: .whitespaces)
-        // A closing run of #s is not part of the title.
-        while title.hasSuffix("#") { title.removeLast() }
-        return title.trimmingCharacters(in: .whitespaces)
+        return body.isEmpty || body.first == " " || body.first == "\t"
     }
 
     private static func isSetextUnderline(_ line: String) -> Bool {
@@ -148,7 +108,7 @@ public enum DatasetCardDrafter {
         do {
             let response = try await model.paragraph(for: request)
             try Task.checkCancellation()
-            let paragraph = removingTemplateHeadings(from: response).trimmingCharacters(in: .whitespacesAndNewlines)
+            let paragraph = removingHeadings(from: response).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !paragraph.isEmpty, paragraph.utf8.count <= paragraphByteLimit else {
                 throw DatasetDraftError(unusableMessage)
             }

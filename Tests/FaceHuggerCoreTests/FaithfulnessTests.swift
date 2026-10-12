@@ -68,14 +68,16 @@ struct FaithfulnessTests {
         #expect(FaithfulnessChecker.violations(output: try overview(in: card), for: testCase) == [])
     }
 
-    /// A reply that repeats template sections reaches the card as the overview prose alone.
-    @Test func duplicateTemplateSectionsAreRemovedBeforeScoring() async throws {
+    /// Headings are removed before scoring, but the text beneath them stays, so the checker
+    /// still catches what the model invented there.
+    @Test func headingsAreRemovedButTheirClaimsStillScore() async throws {
         let testCase = try #require(Self.cases.first { $0.id == "en-plain-prose-only" })
         let reply = try #require(testCase.unfaithful.first { $0.output.contains("## License") }).output
         #expect(FaithfulnessChecker.violations(output: reply, for: testCase).map(\.rule).contains(.markup))
         let card = try await DatasetCardDrafter.draft(facts: facts(for: testCase), input: .init(purpose: testCase.purpose),
                                                       model: FakeDraftModel(.reply(reply)))
-        #expect(FaithfulnessChecker.violations(output: try overview(in: card), for: testCase) == [])
+        let rules = Set(FaithfulnessChecker.violations(output: try overview(in: card), for: testCase).map(\.rule))
+        #expect(rules == [.inventedLicense, .inventedNumber])
         #expect(card.components(separatedBy: "\n## License\n").count == 2)
     }
 
