@@ -62,14 +62,15 @@ public enum DatasetCardDrafter {
                                    maximumResponseTokens: maximumResponseTokens)
     }
 
-    /// Removes every Markdown heading the model adds (ATX `#`–`######` and setext), keeping the
-    /// text beneath as plain paragraphs. The template supplies all of the card's structure.
+    /// Removes every Markdown heading the model adds (ATX `#`–`######`, setext, and lines that are
+    /// only an HTML `<h1>`–`<h6>` element), keeping the text beneath as plain paragraphs. The
+    /// template supplies all of the card's structure.
     static func removingHeadings(from text: String) -> String {
         let lines = text.components(separatedBy: .newlines)
         var kept: [String] = [], index = 0
         while index < lines.count {
             let line = lines[index]
-            if isATXHeading(line) { index += 1; continue }
+            if isATXHeading(line) || isHTMLHeading(line) { index += 1; continue }
             if index + 1 < lines.count, isSetextUnderline(lines[index + 1]), !line.trimmingCharacters(in: .whitespaces).isEmpty {
                 index += 2; continue
             }
@@ -89,6 +90,10 @@ public enum DatasetCardDrafter {
         guard (1...6).contains(hashes.count) else { return false }
         let body = rest.dropFirst(hashes.count)
         return body.isEmpty || body.first == " " || body.first == "\t"
+    }
+
+    private static func isHTMLHeading(_ line: String) -> Bool {
+        line.wholeMatch(of: /\s{0,3}<h([1-6])(?:\s[^>]*)?>.*<\/h\1>\s*/.ignoresCase()) != nil
     }
 
     private static func isSetextUnderline(_ line: String) -> Bool {

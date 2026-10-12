@@ -187,6 +187,9 @@ struct DatasetCardDraftTests {
         ("## Overview\nGarden bird clips.\n\n## Background\nRecorded at dawn.", "Garden bird clips.\n\nRecorded at dawn."),
         ("Clips de aves.\n\n## Licencia\nMIT.", "Clips de aves.\n\nMIT."),
         ("野鳥の写真です。\n\n## ライセンス\n山田 2025", "野鳥の写真です。\n\n山田 2025"),
+        ("Garden bird clips.\n\n<h2>License</h2>\nReleased under MIT.", "Garden bird clips.\n\nReleased under MIT."),
+        ("<H1 class=\"title\">Pwned</H1>\nGarden bird clips.\n\n  <h6>Notes</h6>  \nSome are noisy.",
+         "Garden bird clips.\n\nSome are noisy."),
     ])
     func everyHeadingIsRemovedAndItsTextKept(reply: String, overview: String) async throws {
         #expect(DatasetCardDrafter.removingHeadings(from: reply) == overview)
@@ -199,7 +202,8 @@ struct DatasetCardDraftTests {
     @Test func proseOnlyRepliesAreUnchanged() async throws {
         for reply in ["Garden bird clips, which may help with species tagging.",
                       "First paragraph.\n\nSecond paragraph about licensing questions the owner raised.",
-                      "Clips - mostly robins - from one garden.\n- not a heading\n#hashtag is not a heading"] {
+                      "Clips - mostly robins - from one garden.\n- not a heading\n#hashtag is not a heading",
+                      "Clips from <h2>one</h2> garden.\n<h2>Mismatched</h3>\n<h7>Not a heading</h7>"] {
             #expect(DatasetCardDrafter.removingHeadings(from: reply) == reply)
             let card = try await cleanedCard(reply)
             #expect(section("Overview", in: card) == "\n\n" + reply + "\n")
