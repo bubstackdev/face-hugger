@@ -119,7 +119,8 @@
       "unfaithful": [
         {"output": "# Overview\nA word list of garden bird names in Welsh and English.", "violates": "markup"},
         {"output": "A word list of garden [bird names](https://example.com) in Welsh and English.", "violates": "markup"},
-        {"output": "   ", "violates": "empty"}
+        {"output": "   ", "violates": "empty"},
+        {"output": "A word list of garden bird names in Welsh and English.\n\n## License\nCC-BY-4.0\n\n## Citation\nJones 2024", "violates": "markup"}
       ]
     }
   ]

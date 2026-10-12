@@ -158,12 +158,84 @@ struct DatasetCardDraftTests {
         let card = try await DatasetCardDrafter.draft(facts: facts, input: input, model: model)
         #expect(card.hasPrefix("# Birdsong clips\n"))
         #expect(card.hasSuffix("## License\n\nCC-BY-4.0\n\n## Limitations\n\nOnly one garden.\n"))
-        // The overview is inserted as Markdown, unescaped, so a reply can add its own headings.
-        // Behaviour is kept as shipped for 1.1; see Release/1.1-NOTES.md.
-        withKnownIssue("Generated overview Markdown is not neutralised") {
-            #expect(card.components(separatedBy: "\n## License\n").count == 2)
+        #expect(card.components(separatedBy: "\n## License\n").count == 2)
+        #expect(!card.contains("MIT"))
+        // Only headings that duplicate the template are removed; others pass through as written.
+        withKnownIssue("Non-template headings in the overview are kept") {
             #expect(!card.contains("\n# Pwned"))
         }
+    }
+
+    // MARK: Duplicate template headings
+
+    private func cleanedCard(_ reply: String) async throws -> String {
+        try await DatasetCardDrafter.draft(facts: facts, input: input, model: FakeDraftModel(.reply(reply)))
+    }
+
+    private func headingCount(_ name: String, in card: String) -> Int {
+        card.components(separatedBy: "\n").filter { $0 == "## " + name }.count
+    }
+
+    @Test(arguments: [
+        "Garden bird clips.\n\n## License\nReleased under MIT.",
+        "Garden bird clips.\n\n### LICENSE ###\nReleased under MIT.",
+        "Garden bird clips.\n\n# license:\nReleased under MIT.",
+        "Garden bird clips.\n\nLicence\n-------\nReleased under MIT.",
+        "Garden bird clips.\n\n## Citation\n@misc{birds, year=2025}",
+        "Garden bird clips.\n\n## Usage\nLoad it with pandas and train a classifier.",
+        "Garden bird clips.\n\n## How to cite\nSmith et al.\n\n## Intended Uses\nBenchmarks.",
+    ])
+    func duplicateSectionsAreDroppedWithTheirText(reply: String) async throws {
+        let card = try await cleanedCard(reply)
+        #expect(section("Overview", in: card) == "\n\nGarden bird clips.\n")
+        for heading in ["Overview", "Files", "Data structure and use", "Source and collection", "License", "Limitations"] {
+            #expect(headingCount(heading, in: card) == 1, "\(heading)")
+        }
+        for invented in ["MIT", "@misc", "pandas", "Smith", "Benchmarks", "Citation", "Usage"] {
+            #expect(!card.contains(invented), "\(invented)")
+        }
+        #expect(section("License", in: card).contains("CC-BY-4.0"))
+    }
+
+    @Test(arguments: [
+        ("Clips de aves.\n\n## Licencia\nMIT.", "Clips de aves."),
+        ("Clips de aves.\n\n## Cita\nGarcía 2025.", "Clips de aves."),
+        ("Vogelaufnahmen.\n\n## Lizenz\nMIT.\n\n## Verwendung\nTraining.", "Vogelaufnahmen."),
+        ("Enregistrements d'oiseaux.\n\n## Licence\nMIT.", "Enregistrements d'oiseaux."),
+        ("野鳥の写真です。\n\n## ライセンス\nMIT\n\n## 引用\n山田 2025", "野鳥の写真です。"),
+    ])
+    func duplicateSectionsInOtherLanguagesAreDropped(reply: String, overview: String) async throws {
+        let card = try await cleanedCard(reply)
+        #expect(section("Overview", in: card) == "\n\n" + overview + "\n")
+        #expect(headingCount("License", in: card) == 1)
+        #expect(!card.contains("MIT") && !card.contains("2025") && !card.contains("Training"))
+    }
+
+    @Test func anOverviewHeadingIsDroppedButItsTextKept() async throws {
+        let card = try await cleanedCard("## Overview\nGarden bird clips.\n\nSome may be noisy.")
+        #expect(section("Overview", in: card) == "\n\nGarden bird clips.\n\nSome may be noisy.\n")
+        #expect(headingCount("Overview", in: card) == 1)
+    }
+
+    @Test func proseOnlyRepliesAreUnchanged() async throws {
+        for reply in ["Garden bird clips, which may help with species tagging.",
+                      "First paragraph.\n\nSecond paragraph about licensing questions the owner raised.",
+                      "Clips - mostly robins - from one garden.\n- not a heading\n#hashtag is not a heading"] {
+            #expect(DatasetCardDrafter.removingTemplateHeadings(from: reply) == reply)
+            let card = try await cleanedCard(reply)
+            #expect(section("Overview", in: card) == "\n\n" + reply + "\n")
+        }
+    }
+
+    @Test func otherHeadingsAndTheirTextAreKept() {
+        let reply = "Bird clips.\n\n## Background\nRecorded at dawn.\n\n## License\nMIT\n\n## Notes\nSome are short."
+        #expect(DatasetCardDrafter.removingTemplateHeadings(from: reply)
+                == "Bird clips.\n\n## Background\nRecorded at dawn.\n\n## Notes\nSome are short.")
+    }
+
+    @Test func aReplyThatIsOnlyDuplicateSectionsIsUnusable() async {
+        let error = await draftError { try await cleanedCard("## License\nMIT\n\n## Citation\nSmith 2025") }
+        #expect(error as? DatasetDraftError == DatasetDraftError(DatasetCardDrafter.unusableMessage))
     }
 
     // MARK: Errors
