@@ -1,6 +1,6 @@
 # Face Hugger privacy policy
 
-Effective September 30, 2026. Face Hugger is developed by Zak Keown. For privacy or support requests, contact [zak.k.ai@outlook.com](mailto:zak.k.ai@outlook.com).
+Effective October 12, 2026. Face Hugger is developed by Zak Keown. For privacy or support requests, contact [support@bubstack.dev](mailto:support@bubstack.dev).
 
 This policy covers existing Python-based builds and the native backend. Store build 3 uses the bundled Python backend. The native backend, including optional dataset-card drafting, is in Store build 6, which is awaiting release.
 
@@ -28,7 +28,7 @@ When you open the dataset-card editor, Face Hugger reads file names, sizes, and 
 
 Older direct-download builds fetch Python and upload tools during setup from Astral/GitHub and Python package infrastructure. Those providers receive ordinary download requests and associated network information. The native backend replacement has uploads built in and does not perform that setup download. Opening account, help, or project links sends you to the corresponding third-party website, whose policies apply.
 
-If you email support, the developer receives the address, message, and attachments you send and uses them to respond and investigate the issue. GitHub issues are public: do not post tokens, private datasets, or sensitive logs there. Send only the information needed for support. Contact the address above to request deletion of support correspondence, subject to records that need to be retained for legal obligations or resolving an ongoing issue.
+If you email support, the developer receives the address, message, and attachments you send and uses them to respond and investigate the issue. Never send access tokens. Send only the information needed for support. If you choose to report a bug in the public GitHub repository instead, anything you post there is public. Contact the address above to request deletion of support correspondence, subject to records that need to be retained for legal obligations or resolving an ongoing issue.
 
 ## Changes
 

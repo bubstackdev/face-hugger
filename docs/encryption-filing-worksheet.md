@@ -34,7 +34,7 @@ La case de démarche (déclaration, autorisation, démarche combinée) doit êtr
 A.1 / A.2 - Confirmer si le déclarant est une personne physique ou une personne morale. Ne pas présumer qu'un compte développeur individuel constitue une entreprise enregistrée.
 
 - Identité connue du propriétaire du projet : Zak Keown. À confirmer comme identité légale à utiliser dans le dossier.
-- Contact public du produit : zak.k.ai@outlook.com. À confirmer comme contact administratif et technique.
+- Contact public du produit : support@bubstack.dev. À confirmer comme contact administratif et technique.
 - À compléter localement : nationalité, adresse postale complète, téléphone de contact et qualité du signataire.
 - Si personne morale : dénomination légale, pays, numéro d'enregistrement pertinent et justificatif requis. Ne pas inventer de numéro SIRET pour une entité étrangère.
 

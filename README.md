@@ -36,7 +36,7 @@ Connect with a token that can write to the chosen repository. Select a local fol
 
 For dataset repositories, choose **Dataset card…** beside the remote folder controls. Add purpose, source, license, and limitations; use the template or **Draft on this Mac**. The model rewrites only your purpose into an overview; measured facts and declarations stay deterministic. Existing local README files open for editing and side-by-side comparison. Save through the native dialog, then include the card in a new upload to the repository root. Nothing is published automatically. On-device generation needs macOS 26+, an Apple Intelligence-capable Mac with its model ready, and a build made with Xcode 26+; the template works on macOS 15 and Intel. This feature ships in Store builds 5 and 6; build 4 does not include it. The development build passed 71 Swift tests plus signed-app checks for on-device drafting, README comparison, local save, and unsaved-note protection; an actual model cancellation smoke test also passed. FoundationModels is weak-linked, so builds still launch on macOS 15.
 
-[Privacy policy](docs/privacy.md) · [Support](https://github.com/bubstackdev/face-hugger/issues) · [Native release gate](docs/native-backend-release.md)
+[Privacy policy](https://bubstack.dev/face-hugger/privacy.html) · [Support](https://bubstack.dev/face-hugger/) ([support@bubstack.dev](mailto:support@bubstack.dev)) · [Native release gate](docs/native-backend-release.md)
 
 ## Limits and verification
 

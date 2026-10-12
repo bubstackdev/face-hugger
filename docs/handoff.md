@@ -28,7 +28,7 @@ App `6817866865`; bundle `dev.zakkeown.FaceHugger`; version `6302c414-5900-40dd-
 
 ## Owner-approved listing and review access
 
-Free, all current/future territories, Developer Tools, 13+ minimum, approved third-party content-rights declaration. Privacy policy published with public contact zak.k.ai@outlook.com. App Privacy published: User ID and Other User Content, linked for App Functionality, no tracking. Private review contact and restricted-token credentials saved and browser reload-verified.
+Free, all current/future territories, Developer Tools, 13+ minimum, approved third-party content-rights declaration. Privacy policy published with public contact zak.k.ai@outlook.com; moved on October 12, 2026 to https://bubstack.dev/face-hugger/privacy.html with contact support@bubstack.dev (App Store Connect URLs updated to match; build 6 still links to the GitHub copy in-app, which redirects). App Privacy published: User ID and Other User Content, linked for App Functionality, no tracking. Private review contact and restricted-token credentials saved and browser reload-verified.
 
 Retain private dataset `zakkeown/face-hugger-app-review-89503494` and token **Face Hugger App Review** through review; revoke/delete afterward. Token resides in ASC private review credentials, not files/Git. HF requires selected-repository read/write plus gated-request view and allows public reads; no global private/org scope. Do not print ASC review-password fields or screenshot them. Private contact JSON is ignored under `.build`.
 

@@ -34,7 +34,7 @@ struct SettingsSheet: View {
             }.formStyle(.grouped)
             ErrorBanner(model: model)
             HStack {
-                Link("Privacy policy", destination: URL(string: "https://github.com/bubstackdev/face-hugger/blob/main/docs/privacy.md")!)
+                Link("Privacy policy", destination: URL(string: "https://bubstack.dev/face-hugger/privacy.html")!)
                 Link("Open-source notices", destination: URL(string: "https://github.com/bubstackdev/face-hugger/blob/main/Resources/PythonFnmatchLicense.txt")!)
                 Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
             }
