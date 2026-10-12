@@ -6,7 +6,7 @@
 
 A native Mac upload manager for Hugging Face. Give your big folders a home.
 
-Face Hugger brings a local file preview, remote repository browser, and persistent upload queue into one SwiftUI workspace for macOS 15 and later. **Store build 1.0 (6) is built, signed, and attached to the App Store draft; release validation is still in progress.** Existing direct beta and Store build 3 artifacts use the older Python/Hugging Face CLI backend; their verification results do not establish native-build behavior.
+Face Hugger brings a local file preview, remote repository browser, and persistent upload queue into one SwiftUI workspace for macOS 27 and later on Apple silicon. Version 1.1 raises the minimum from macOS 15; 1.0 is the last release for macOS 15–26 and Intel Macs. **Store build 1.0 (6) is built, signed, and attached to the App Store draft; release validation is still in progress.** Existing direct beta and Store build 3 artifacts use the older Python/Hugging Face CLI backend; their verification results do not establish native-build behavior.
 
 ## Workspace
 
@@ -22,7 +22,7 @@ The native engine uses Apple URLSession and CryptoKit against Hugging Face HTTP 
 
 ## Build and run
 
-You need macOS 15+, Xcode with Swift 6 support, and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
+You need macOS 27+ on Apple silicon, Xcode 27, and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
 ```sh
 brew install xcodegen
@@ -34,7 +34,7 @@ open ".build/xcode/Build/Products/Debug/Face Hugger.app"
 
 Connect with a token that can write to the chosen repository. Select a local folder and destination, review filters, then start the upload. Matching remote paths may be replaced; other files remain. Source folders stay live rather than being snapshotted. The native engine checks for changes and requires a new job when a saved upload’s source changes. Stopping does not undo remote commits. Closing the window leaves the app running; quitting stops an active transfer.
 
-For dataset repositories, choose **Dataset card…** beside the remote folder controls. Add purpose, source, license, and limitations; use the template or **Draft on this Mac**. The model rewrites only your purpose into an overview; measured facts and declarations stay deterministic. Existing local README files open for editing and side-by-side comparison. Save through the native dialog, then include the card in a new upload to the repository root. Nothing is published automatically. On-device generation needs macOS 26+, an Apple Intelligence-capable Mac with its model ready, and a build made with Xcode 26+; the template works on macOS 15 and Intel. This feature ships in Store builds 5 and 6; build 4 does not include it. The development build passed 71 Swift tests plus signed-app checks for on-device drafting, README comparison, local save, and unsaved-note protection; an actual model cancellation smoke test also passed. FoundationModels is weak-linked, so builds still launch on macOS 15.
+For dataset repositories, choose **Dataset card…** beside the remote folder controls. Add purpose, source, license, and limitations; use the template or **Draft on this Mac**. The model rewrites only your purpose into an overview; measured facts and declarations stay deterministic. Existing local README files open for editing and side-by-side comparison. Save through the native dialog, then include the card in a new upload to the repository root. Nothing is published automatically. On-device generation needs an Apple Intelligence-capable Mac with Apple Intelligence enabled and its model ready; the template works on every supported Mac. This feature ships in Store builds 5 and 6; build 4 does not include it. The development build passed 71 Swift tests plus signed-app checks for on-device drafting, README comparison, local save, and unsaved-note protection; an actual model cancellation smoke test also passed.
 
 [Privacy policy](https://bubstack.dev/face-hugger/privacy.html) · [Support](https://bubstack.dev/face-hugger/) ([support@bubstack.dev](mailto:support@bubstack.dev)) · [Native release gate](docs/native-backend-release.md)
 

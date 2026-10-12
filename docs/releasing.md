@@ -1,6 +1,6 @@
 # Building a developer beta
 
-`Scripts/package-beta.sh` builds a Release app and a drag-to-Applications disk image. It does not publish a release or upload an artifact unless notarization is explicitly enabled. The minimum OS is macOS 15. The app's first-run runtime setup needs internet access; the per-user upload runtime is not bundled in the DMG.
+`Scripts/package-beta.sh` builds a Release app and a drag-to-Applications disk image. It does not publish a release or upload an artifact unless notarization is explicitly enabled. The minimum OS is macOS 27, on Apple silicon. The app's first-run runtime setup needs internet access; the per-user upload runtime is not bundled in the DMG.
 
 ## Local package
 
@@ -11,7 +11,7 @@ Scripts/check.sh
 Scripts/package-beta.sh
 ```
 
-The default build includes both `arm64` and `x86_64`. It fails if either requested architecture cannot be built or is missing; it never silently narrows the artifact. For an explicitly architecture-specific developer build, set `FACEHUGGER_ARCHS=arm64` or `FACEHUGGER_ARCHS=x86_64`.
+The build is `arm64` only, because macOS 27 does not run on Intel Macs. It fails if the arm64 slice is missing.
 
 Builds use an independently generated project and DerivedData inside `.build/beta/`, so packaging does not replace the Debug project's build products. Diagnostics are in `.build/beta/build.log`. The script reads the version and build number from the built app, using the values configured in `project.yml`.
 

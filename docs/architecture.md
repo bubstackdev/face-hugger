@@ -1,6 +1,6 @@
 # Architecture
 
-Face Hugger is a macOS 15+ SwiftUI app with a small Python bridge to the official Hugging Face runtime. The first release keeps process ownership inside the app: closing a window preserves work, while quitting stops the upload before the app exits.
+Face Hugger is a macOS 27+ SwiftUI app (macOS 15+ through 1.0) with a small Python bridge to the official Hugging Face runtime. The first release keeps process ownership inside the app: closing a window preserves work, while quitting stops the upload before the app exits.
 
 ## Components
 
