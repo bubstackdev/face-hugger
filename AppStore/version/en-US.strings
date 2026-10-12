@@ -3,3 +3,4 @@
 "promotionalText" = "Upload models and datasets from a native Mac workspace. Draft dataset cards with optional on-device Apple Intelligence, review your files, and keep transfers organized.";
 "supportUrl" = "https://bubstack.dev/face-hugger/";
 "marketingUrl" = "https://bubstack.dev/face-hugger/";
+"whatsNew" = "Face Hugger 1.1 requires macOS 27 and a Mac with Apple silicon. If your Mac has an Intel processor or runs an earlier version of macOS, Face Hugger 1.0 stays available and keeps working.\n\nDataset card drafts are tidier: if the on-device model adds its own License, Citation or Usage section, Face Hugger removes it, so the card keeps only its own sections and your details.";
