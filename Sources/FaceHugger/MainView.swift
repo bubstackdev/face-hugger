@@ -11,8 +11,6 @@ struct MainView: View {
     @State private var dropTarget = false
     @State private var savePairing = false
     @State private var pairingName = ""
-    @State private var pendingPairing: SavedPairing?
-    @State private var pendingSource: URL?
     @State private var localSearch = ""
     @State private var sourceSelection: Data?
 
@@ -52,6 +50,9 @@ struct MainView: View {
         }
         .sheet(isPresented: $model.showSettings) { SettingsSheet(model: model) }
         .sheet(isPresented: $model.showCreateRepo) { CreateRepoSheet(model: model) }
+        .sheet(item: $model.uploadReview) { workspace in
+            UploadReviewView(workspace: workspace, onApprove: { model.approveUploadReview() }, onCancel: { model.cancelUploadReview() })
+        }
         .sheet(item: $model.datasetCard) { workspace in
             DatasetCardSheet(workspace: workspace, onSaved: { model.scanSource() })
         }
@@ -64,13 +65,8 @@ struct MainView: View {
             Button("Cancel", role: .cancel) { }
             Button("Save") { model.savePairing(name: pairingName) }
         } message: { Text("Remember this folder, repository, destination path, and filters. Uploads always start manually.") }
-        .confirmationDialog("Replace the prepared folder and destination?", isPresented: Binding(get: { pendingPairing != nil }, set: { if !$0 { pendingPairing = nil } })) {
-            Button("Use pairing") { if let pairing = pendingPairing { Task { await model.applyPairing(pairing) } }; pendingPairing = nil }
-            Button("Keep current", role: .cancel) { pendingPairing = nil }
-        } message: { Text("This replaces the workspace configuration. Existing queued and running uploads keep their original settings.") }
-        .confirmationDialog("Replace the prepared folder?", isPresented: Binding(get: { pendingSource != nil }, set: { if !$0 { pendingSource = nil } })) {
-            Button("Use folder") { if let url = pendingSource { model.stageFolder(url) }; pendingSource = nil }
-            Button("Keep current", role: .cancel) { pendingSource = nil }
+        .sheet(isPresented: Binding(get: { model.pendingFolders.count > 1 }, set: { if !$0 { model.pendingFolders = [] } })) {
+            FolderSelectionView(folders: model.pendingFolders, onChoose: model.useFolder, onCancel: { model.pendingFolders = [] })
         }
         .task { if model.runtimeReady && model.hasExistingCredentials { await model.connect() } }
         .onChange(of: model.runtimeReady) { _, ready in if ready { model.scanSource() } }
@@ -122,8 +118,8 @@ struct MainView: View {
         .background(BenchTheme.source)
         .overlay { if dropTarget { Rectangle().strokeBorder(BenchTheme.gold, lineWidth: 3).allowsHitTesting(false) } }
         .dropDestination(for: URL.self) { urls, _ in
-            guard let url = urls.first, url.isFileURL else { return false }
-            if !model.draftSource.isEmpty && model.draftSource != url.path { pendingSource = url } else { model.stageFolder(url) }
+            guard !urls.isEmpty else { return false }
+            model.openFolders(urls)
             return true
         } isTargeted: { dropTarget = $0 }
     }
@@ -261,52 +257,29 @@ struct MainView: View {
                 Spacer(minLength: 8)
                 if model.submitting { ProgressView().controlSize(.small) }
                 Menu {
-                    Button("Add to queue") { Task { await model.submitStaged(start: false) } }
+                    Button("Review and add to queue…") { Task { await model.submitStaged(start: false) } }
                 } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).frame(width: 20).disabled(!canUpload).accessibilityLabel("More upload actions")
-                Button(model.activeJob == nil ? "Upload \(model.staging?.includedCount ?? 0) files" : "Queue upload") {
+                Button("Review upload…") {
                     Task { await model.submitStaged(start: model.activeJob == nil) }
                 }.buttonStyle(BenchUploadButton()).disabled(!canUpload).keyboardShortcut(.return, modifiers: .command)
             }.padding(.horizontal, 24).frame(height: 76)
         }.background(BenchTheme.remote)
     }
-    private var canUpload: Bool { model.runtimeReady && !model.scanning && !model.submitting && model.comparison?.conflicts.isEmpty != false && model.currentRepo != nil && (model.staging?.includedCount ?? 0) > 0 }
+    private var canUpload: Bool { model.runtimeReady && !model.scanning && !model.submitting && model.currentRepo != nil && (model.staging?.includedCount ?? 0) > 0 }
     private var summary: String {
         if model.scanning { return "Preparing folder…" }
         guard let result = model.staging else { return "No files prepared" }
         return "\(result.includedCount) files / \(ByteCountFormatter.string(fromByteCount: result.includedBytes, countStyle: .file))"
     }
     private var pairingPicker: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Saved pairings").font(.system(size: 15, weight: .semibold))
-            if model.pairings.isEmpty {
-                Text("Save a folder and its destination for the next upload.").font(.system(size: 13)).foregroundStyle(.secondary)
-            } else {
-                ScrollView {
-                    VStack(spacing: 4) {
-                        ForEach(model.pairings) { pairing in
-                            HStack {
-                                Button {
-                                    showPairings = false
-                                    if !model.draftSource.isEmpty { pendingPairing = pairing } else { Task { await model.applyPairing(pairing) } }
-                                } label: {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(pairing.name).font(.system(size: 13, weight: .medium))
-                                        Text(URL(fileURLWithPath: pairing.source).lastPathComponent + " → " + pairing.repo.name + (pairing.destination.isEmpty ? "" : "/" + pairing.destination))
-                                            .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
-                                    }.frame(maxWidth: .infinity, alignment: .leading).padding(6).contentShape(Rectangle())
-                                }.buttonStyle(.plain)
-                                Button { model.removePairing(pairing.id) } label: { Image(systemName: "minus.circle") }.buttonStyle(.plain).help("Remove saved pairing").accessibilityLabel("Remove saved pairing \(pairing.name)")
-                            }
-                        }
-                    }
-                }.frame(maxHeight: 250)
-            }
-            Divider()
-            Button("Save current pairing…", systemImage: "plus") { pairingName = URL(fileURLWithPath: model.draftSource).lastPathComponent; showPairings = false; savePairing = true }
-                .disabled(model.draftSource.isEmpty || model.currentRepo == nil)
-            Text("Pairings never start an upload automatically.").font(.system(size: 12)).foregroundStyle(.secondary)
-        }.padding(18).frame(width: 360)
+        SavedPairingPicker(pairings: model.pairings, activeID: model.activePairingID,
+            canSave: !model.draftSource.isEmpty && model.currentRepo != nil,
+            onUse: { pairing in showPairings = false; Task { await model.applyPairing(pairing) } },
+            onRename: model.renamePairing, onPin: model.togglePairingPin,
+            onMove: model.movePairing, onRemove: model.removePairing,
+            onSave: { pairingName = URL(fileURLWithPath: model.draftSource).lastPathComponent; showPairings = false; savePairing = true })
     }
+
 }
 
 struct BenchUploadButton: ButtonStyle {

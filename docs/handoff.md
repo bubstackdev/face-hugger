@@ -1,4 +1,8 @@
-## Current state — October 12, 2026 (read first)
+## Latest development handoff October 27 2026
+
+Read the [1.1 development handoff](handoff-1.1.md) first for the current feature work, shutdown commit, validation evidence, remaining release gates, and safe resume instructions. The October 12 and earlier sections below are historical 1.0 release context, not verification of 1.1 or a current App Store Connect readback.
+
+## Historical release state — October 12, 2026
 
 **Build 7** (`5970101a-89ed-4a6c-a0bb-e88ab42217e6`) is uploaded, VALID (`usesNonExemptEncryption=false`) and attached to the 1.0 draft in place of build 6. The draft reads back with build 7. `asc validate --strict --check-urls` reports 0 errors, warnings and blockers; the info items are manual release and the unverifiable App Privacy publish state.
 

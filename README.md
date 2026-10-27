@@ -20,6 +20,14 @@ Face Hugger brings a local file preview, remote repository browser, and persiste
 
 The native engine uses Apple URLSession and CryptoKit against Hugging Face HTTP APIs. It needs no Python installation or bundled workers. Live multipart transfer, cancellation, fresh-process resume, and downloaded hashes have passed verification. Recovery reuses confirmed files; unfinished multipart transfers restart. It does not implement Xet chunk-level deduplication or promise multi-terabyte performance.
 
+## Roadmap
+
+Version 1.1 focuses on upload review, clearer progress and recovery, durable transfer receipts, saved-pairing improvements, and Dock folder entry. Version 2.0 develops local–Hub projects and repeatable ML publishing. See the [roadmap](docs/roadmap.md) and [1.1 implementation plan](docs/plan-1.1.md).
+
+The 1.1 development build adds a complete upload-review sheet backed by an on-disk plan. It compares supported content identities, requires approval for unresolved comparisons, and executes reviewed actions with parent-commit guards. Typed native events support durable receipts, phase indicators, measured upload-body speed, and cancellable retry countdowns. Logical file progress and observed request-body totals are reported separately. See the [transfer-activity record](docs/verification/1.1-transfer-activity.md), [upload-review record](docs/verification/1.1-upload-review.md), and earlier [foundation record](docs/verification/1.1-foundation.md).
+
+It also adds searchable saved pairings with rename, pinning, ordering, and active-route tracking. Opening folders through the Dock uses the same guarded staging as the folder picker and in-window drop. Multiple folders receive a chooser; opening a folder never starts an upload. See the [pairings and entry verification record](docs/verification/1.1-pairings-entry.md) for implemented behavior and remaining signed-app checks.
+
 ## Build and run
 
 You need macOS 15+, Xcode with Swift 6 support, and [XcodeGen](https://github.com/yonaskolb/XcodeGen).

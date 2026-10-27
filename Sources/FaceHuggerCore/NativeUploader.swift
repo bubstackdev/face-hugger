@@ -2,13 +2,19 @@ import Foundation
 import CryptoKit
 import Darwin
 
-public struct NativeUploadProgress: Sendable {
+public struct NativeUploadProgress: Codable, Equatable, Sendable {
     public var checked = 0, total = 0, uploaded = 0, uploadTotal = 0, committed = 0, commits = 0
     public var transferredBytes: Int64 = 0
+    public var identicalFiles: Int?
+    public var ignoredFiles: Int?
 }
 public enum NativeUploadEvent: Sendable {
+    case phase(TransferPhase, file: String?)
+    case transport(NativeTransferEvent)
     case status(String)
     case progress(NativeUploadProgress)
+    case committed(NativeCommitResult, fileCount: Int)
+    case verifiedRevision(String)
     case completed(URL)
 }
 public protocol NativeUploadTransport: Sendable {
@@ -20,10 +26,10 @@ public protocol NativeUploadTransport: Sendable {
     func commit(repo: HubRepo, additions: [NativeCommitFile], deletions: [String], message: String) async throws -> NativeCommitResult
 }
 public enum NativeUploadError: LocalizedError, Equatable {
-    case invalid(String), sourceChanged(String), checkpoint(String), unconfirmedCommit
+    case invalid(String), sourceChanged(String), checkpoint(String), unconfirmedCommit, reviewRequired(String)
     public var errorDescription: String? {
         switch self {
-        case .invalid(let text), .checkpoint(let text): return text
+        case .invalid(let text), .checkpoint(let text), .reviewRequired(let text): return text
         case .sourceChanged(let path): return "Source changed: \(path). Start a new upload to use the updated files."
         case .unconfirmedCommit: return "The server did not confirm the commit. Resume to check and retry safely."
         }
@@ -40,59 +46,18 @@ public enum NativeUploader {
     }
     private static let blockSize = 1024 * 1024
     private static let regularLimit = 16 * 1024 * 1024
-    private struct Stamp: Codable, Equatable {
-        var device: Int32, inode: UInt64, size: Int64, modified: Int64, modifiedNS: Int64, changed: Int64, changedNS: Int64
-        init(_ url: URL) throws {
-            var value = stat()
-            guard url.path.withCString({ Darwin.lstat($0, &value) }) == 0, (value.st_mode & S_IFMT) == S_IFREG else {
-                throw NativeUploadError.invalid("Cannot read source file: \(url.lastPathComponent)")
-            }
-            self.init(value)
-        }
-        init(_ value: stat) {
-            device = value.st_dev; inode = value.st_ino; size = value.st_size
-            modified = Int64(value.st_mtimespec.tv_sec); modifiedNS = Int64(value.st_mtimespec.tv_nsec)
-            changed = Int64(value.st_ctimespec.tv_sec); changedNS = Int64(value.st_ctimespec.tv_nsec)
-        }
-    }
-    private struct Entry: Codable { var path: String; var stamp: Stamp }
+    private typealias Stamp = UploadFileStamp
+    private typealias Entry = UploadSourceEntry
     private struct Summary: Codable { var version = 1; var fingerprint: String; var head: String?; var epoch = UUID() }
     private struct Receipt: Codable { var path: String; var sha256: String; var epoch: UUID }
     private static func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
     private static func encode<T: Encodable>(_ value: T) throws -> Data {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]; return try encoder.encode(value)
     }
-    private static func sourceFile(root: URL, path: String) throws -> URL {
-        guard !path.isEmpty, !path.hasPrefix("/"), !path.split(separator: "/", omittingEmptySubsequences: false).contains(where: { $0 == ".." || $0 == "." || $0.isEmpty }) else { throw NativeUploadError.invalid("Invalid source path.") }
-        let file = root.appendingPathComponent(path).resolvingSymlinksInPath()
-        guard file.path.hasPrefix(root.path + "/") else { throw NativeUploadError.invalid("Source link leaves the selected folder: \(path)") }
-        return file
-    }
-    private static func verify(_ entry: Entry, root: URL) throws -> URL {
-        let file = try sourceFile(root: root, path: entry.path)
-        guard try Stamp(file) == entry.stamp else { throw NativeUploadError.sourceChanged(entry.path) }
-        return file
-    }
+    private static func sourceFile(root: URL, path: String) throws -> URL { try UploadSource.file(root: root, path: path) }
+    private static func verify(_ entry: Entry, root: URL) throws -> URL { try UploadSource.verify(entry, root: root) }
     private static func descriptor(_ entry: Entry, root: URL, destination: String) throws -> NativeUploadDescriptor {
-        let file = try verify(entry, root: root)
-        let handle = try FileHandle(forReadingFrom: file); defer { try? handle.close() }
-        var opened = stat()
-        guard fstat(handle.fileDescriptor, &opened) == 0, Stamp(opened) == entry.stamp else { throw NativeUploadError.sourceChanged(entry.path) }
-        var actualPath = [CChar](repeating: 0, count: Int(MAXPATHLEN))
-        guard fcntl(handle.fileDescriptor, F_GETPATH, &actualPath) == 0,
-              URL(fileURLWithPath: String(decoding: actualPath.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)).standardizedFileURL.path.hasPrefix(root.path + "/") else { throw NativeUploadError.sourceChanged(entry.path) }
-        var hash = SHA256(), sample = Data(), count: Int64 = 0
-        while true {
-            try Task.checkCancellation()
-            let data = try handle.read(upToCount: blockSize) ?? Data()
-            if data.isEmpty { break }
-            if sample.isEmpty { sample = Data(data.prefix(512)) }
-            hash.update(data: data); count += Int64(data.count)
-        }
-        _ = try verify(entry, root: root)
-        guard fstat(handle.fileDescriptor, &opened) == 0, Stamp(opened) == entry.stamp else { throw NativeUploadError.sourceChanged(entry.path) }
-        guard count == entry.stamp.size else { throw NativeUploadError.sourceChanged(entry.path) }
-        return NativeUploadDescriptor(path: destination.isEmpty ? entry.path : destination + "/" + entry.path, size: count, sha256: hash.finalize().map { String(format: "%02x", $0) }.joined(), sample: sample)
+        try UploadSource.hash(entry, root: root, destination: destination, includeGit: false).descriptor
     }
     /// The line reader holds at most one metadata record, even for millions of source files.
     private final class Lines {
@@ -181,7 +146,9 @@ public enum NativeUploader {
             try Task.checkCancellation()
             for (entry, _, _) in pending { _ = try verify(entry, root: root) }
             let result = try await transport.commit(repo: job.repo, additions: pending.map { $0.1 }, deletions: [], message: "Upload files with Face Hugger")
-            guard !result.commitOID.isEmpty else { throw NativeUploadError.unconfirmedCommit }
+            guard result.commitOID.range(of: "^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$", options: .regularExpression) != nil else { throw NativeUploadError.unconfirmedCommit }
+            // Record the acknowledgement before local checkpoint writes can fail.
+            onEvent(.committed(result, fileCount: pending.count))
             for (entry, addition, receiptURL) in pending {
                 try encode(Receipt(path: entry.path, sha256: addition.descriptor.sha256, epoch: summary.epoch)).write(to: receiptURL, options: .atomic)
             }

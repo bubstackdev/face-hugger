@@ -33,6 +33,7 @@ targets:
         PRODUCT_NAME: Face Hugger
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: Resources/Info.plist
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
         INFOPLIST_KEY_CFBundleDisplayName: Face Hugger
         MARKETING_VERSION: '0.1.0'

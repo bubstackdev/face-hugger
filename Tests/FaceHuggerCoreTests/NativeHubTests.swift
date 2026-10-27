@@ -11,9 +11,44 @@ private actor HubMock: NativeHTTPTransport {
     func execute(_ request: URLRequest, uploadFile: URL?, onBytes: @escaping @Sendable (Int64) -> Void) async throws -> NativeHTTPResponse {
         let bytes = try uploadFile.map { try Data(contentsOf: $0) }
         calls.append(Call(request: request, upload: bytes))
-        if let bytes { onBytes(Int64(bytes.count)) }
+        if let sent = bytes ?? request.httpBody { onBytes(Int64(sent.count)) }
         guard !replies.isEmpty else { throw NativeHubError.invalidResponse("Unexpected test request") }
         return replies.removeFirst()
+    }
+}
+private final class TransportProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var tracker = TransferTransportTracker()
+    private var logicalBytes: Int64 = 0
+    let onWait: (@Sendable () -> Void)?
+    init(onWait: (@Sendable () -> Void)? = nil) { self.onWait = onWait }
+    func record(_ event: NativeTransferEvent) {
+        lock.lock(); tracker.apply(event, at: ProcessInfo.processInfo.systemUptime); lock.unlock()
+        if case .waiting = event { onWait?() }
+    }
+    func logical(_ bytes: Int64) { lock.lock(); logicalBytes = max(logicalBytes, bytes); lock.unlock() }
+    var summary: TransferTransportSummary { lock.lock(); defer { lock.unlock() }; return tracker.summary }
+    var progress: Int64 { lock.lock(); defer { lock.unlock() }; return logicalBytes }
+}
+private actor TreeEntries {
+    var values: [NativeHubEntry] = []
+    func append(_ entry: NativeHubEntry) { values.append(entry) }
+}
+private actor PartialSendMock: NativeHTTPTransport {
+    let responses: [NativeHTTPResponse]
+    private var index = 0
+    init(_ responses: [NativeHTTPResponse]) { self.responses = responses }
+    func execute(_ request: URLRequest, uploadFile: URL?, onBytes: @escaping @Sendable (Int64) -> Void) async throws -> NativeHTTPResponse {
+        if let uploadFile {
+            let count = try Data(contentsOf: uploadFile).count
+            if index == 1 {
+                index += 1; onBytes(2)
+                throw NativeHubError.network(code: NSURLErrorNetworkConnectionLost)
+            }
+            onBytes(Int64(count))
+        } else if let body = request.httpBody { onBytes(Int64(body.count)) }
+        defer { index += 1 }
+        return responses[index]
     }
 }
 private final class LargeResponseProtocol: URLProtocol, @unchecked Sendable {
@@ -128,6 +163,84 @@ final class NativeHubTests: XCTestCase, @unchecked Sendable {
         do { try await NativeHubClient(token:nil,transport:wrong).uploadLFS(repo:repo,file:local,descriptor:desc); XCTFail() }
         catch NativeHubError.invalidResponse { }
     }
+    func testMultipartRetryCountsBodiesWithoutInflatingFileProgress() async throws {
+        let bytes = Data("0123456789".utf8), desc = file(Data("0123456789".utf8))
+        let local = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try bytes.write(to: local); defer { try? FileManager.default.removeItem(at: local) }
+        let action: [String: Any] = ["href": "https://huggingface.co/complete", "header": ["chunk_size": "6", "1": "https://storage.example/1", "2": "https://storage.example/2"]]
+        let mock = HubMock([try reply(["objects": [["oid": desc.sha256, "size": desc.size, "actions": ["upload": action]]]]),
+                            try reply([:], status: 503), try reply([:], headers: ["ETag": "one"]),
+                            try reply([:], headers: ["ETag": "two"]), try reply([:])])
+        let probe = TransportProbe()
+        try await NativeHubClient(token: nil, transport: mock, onTransferEvent: probe.record)
+            .uploadLFS(repo: repo, file: local, descriptor: desc, onBytes: probe.logical)
+        let calls = await mock.calls
+        let observed = calls.reduce(Int64(0)) { $0 + Int64(($1.upload ?? $1.request.httpBody)?.count ?? 0) }
+        XCTAssertEqual(probe.summary.requestBodyBytes, observed)
+        XCTAssertEqual(probe.summary.uploadBodyBytes, 16)
+        XCTAssertEqual(probe.progress, 10)
+        XCTAssertEqual(probe.summary.requestAttempts, 5)
+        XCTAssertEqual(probe.summary.retryAttempts, 1)
+        XCTAssertEqual(probe.summary.retryWaits, 1)
+    }
+    func testInlineCommitCountsEncodedBodyAndNeverRetriesMutation() async throws {
+        let bytes = Data("abc".utf8), addition = NativeCommitFile(descriptor: file(Data("abc".utf8)), content: bytes)
+        for status in [200, 503] {
+            let mock = HubMock([try reply(["commitOid": String(repeating: "a", count: 40)], status: status)])
+            let probe = TransportProbe()
+            do { _ = try await NativeHubClient(token: nil, transport: mock, onTransferEvent: probe.record).commit(repo: repo, additions: [addition]) }
+            catch { XCTAssertEqual(status, 503) }
+            let calls = await mock.calls
+            XCTAssertEqual(calls.count, 1)
+            XCTAssertEqual(probe.summary.requestBodyBytes, Int64(try XCTUnwrap(calls.first?.request.httpBody).count))
+            XCTAssertGreaterThan(probe.summary.uploadBodyBytes, Int64(bytes.count))
+            XCTAssertEqual(probe.summary.uploadBodyBytes, probe.summary.requestBodyBytes)
+            XCTAssertEqual(probe.summary.retryAttempts, 0)
+            XCTAssertEqual(probe.summary.retryWaits, 0)
+        }
+    }
+    func testPartialNetworkSendIsRetainedWhenWholeFileRetries() async throws {
+        let bytes = Data("0123456789".utf8), desc = file(Data("0123456789".utf8))
+        let local = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try bytes.write(to: local); defer { try? FileManager.default.removeItem(at: local) }
+        let batch = try reply(["objects": [["oid": desc.sha256, "size": desc.size, "actions": ["upload": ["href": "https://storage.example/object"]]]]])
+        let mock = PartialSendMock([batch, try reply([:]), try reply([:])])
+        let probe = TransportProbe()
+        try await NativeHubClient(token: nil, transport: mock, onTransferEvent: probe.record)
+            .uploadLFS(repo: repo, file: local, descriptor: desc, onBytes: probe.logical)
+        XCTAssertEqual(probe.summary.uploadBodyBytes, 12)
+        XCTAssertEqual(probe.progress, 10)
+        XCTAssertEqual(probe.summary.requestAttempts, 3)
+        XCTAssertEqual(probe.summary.retryReasons[.connection], 1)
+        XCTAssertEqual(probe.summary.retryAttempts, 1)
+    }
+    func testReadRetriesExhaustAtThreeAndAuthorizationErrorsDoNotRetry() async throws {
+        for status in [401, 403, 409, 503] {
+            let mock = HubMock(try (0..<3).map { _ in try reply([:], status: status) })
+            let probe = TransportProbe()
+            do { _ = try await NativeHubClient(token: nil, transport: mock, onTransferEvent: probe.record).whoami(); XCTFail() }
+            catch NativeHubError.http(let actual, _) { XCTAssertEqual(actual, status) }
+            let calls = await mock.calls
+            XCTAssertEqual(calls.count, status == 503 ? 3 : 1)
+            XCTAssertEqual(probe.summary.retryAttempts, status == 503 ? 2 : 0)
+            XCTAssertEqual(probe.summary.retryWaits, status == 503 ? 2 : 0)
+        }
+    }
+    func testCancellationDuringRetryWaitDoesNotStartAnotherRequest() async throws {
+        let waiting = expectation(description: "Entered retry wait")
+        let probe = TransportProbe(onWait: { waiting.fulfill() })
+        let mock = HubMock([try reply([:], status: 429, headers: ["Retry-After": "30"])])
+        let client = NativeHubClient(token: nil, transport: mock, onTransferEvent: probe.record)
+        let task = Task { try await client.whoami() }
+        await fulfillment(of: [waiting], timeout: 2)
+        task.cancel()
+        do { _ = try await task.value; XCTFail() } catch is CancellationError { }
+        let calls = await mock.calls
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(probe.summary.retryWaits, 1)
+        XCTAssertEqual(probe.summary.cancelledRetryWaits, 1)
+        XCTAssertEqual(probe.summary.retryAttempts, 0)
+    }
     func testCommitRequiresAckAndDoesNotRetryAmbiguousMutation() async throws {
         let bytes = Data("abc".utf8), oid = String(repeating:"a",count:40)
         let first = NativeCommitFile(descriptor:file(bytes,path:"é.txt"),content:bytes)
@@ -150,6 +263,88 @@ final class NativeHubTests: XCTestCase, @unchecked Sendable {
         do { _ = try await NativeHubClient(token:nil,transport:mock).commit(repo:repo,additions:[changed]); XCTFail() }
         catch NativeHubError.sourceChanged { }
         let calls = await mock.calls; XCTAssertTrue(calls.isEmpty)
+    }
+    func testTreePreservesDistinctGitLFSAndOpaqueXetIdentities() async throws {
+        let blob = String(repeating: "a", count: 40), content = String(repeating: "b", count: 64)
+        let objects: [[String: Any]] = [
+            ["path": "weights.bin", "type": "file", "size": 100, "oid": blob,
+             "lfs": ["oid": content, "size": 100, "pointerSize": 130], "xetHash": "opaque-xet-id"],
+            ["path": "unknown.txt", "type": "file", "size": 100]
+        ]
+        let mock = HubMock([try reply(objects)])
+        let entries = try await NativeHubClient(token: nil, transport: mock).tree(repo: repo)
+        XCTAssertEqual(entries[0].gitBlobOID, blob)
+        XCTAssertEqual(entries[0].lfsSHA256, content)
+        XCTAssertEqual(entries[0].xetHash, "opaque-xet-id")
+        XCTAssertNil(entries[1].gitBlobOID); XCTAssertNil(entries[1].lfsSHA256)
+        let invalid = HubMock([try reply([["path": "bad.bin", "type": "file", "size": 1, "lfs": ["oid": "not-a-hash"]]])])
+        do { _ = try await NativeHubClient(token: nil, transport: invalid).tree(repo: repo); XCTFail() }
+        catch NativeHubError.invalidResponse { }
+    }
+    func testRevisionBoundTreeAndStreamKeepIdentityAcrossPages() async throws {
+        let revision = String(repeating: "c", count: 40)
+        let first = try reply([["path": "a.txt", "type": "file", "size": 1]], headers: ["Link": "<?cursor=2>; rel=next"])
+        let second = try reply([["path": "b.txt", "type": "file", "size": 2, "oid": String(repeating: "d", count: 40)]])
+        let mock = HubMock([first, second])
+        let entries = try await NativeHubClient(token: nil, transport: mock).tree(repo: repo, recursive: true, revision: revision)
+        XCTAssertEqual(entries.map(\.path), ["a.txt", "b.txt"])
+        let calls = await mock.calls
+        XCTAssertTrue(calls.allSatisfy { $0.request.url?.path == "/api/datasets/owner/repo/tree/\(revision)" })
+        let streamed = TreeEntries(), streamMock = HubMock([first, second])
+        try await NativeHubClient(token: nil, transport: streamMock).streamTree(repo: repo, revision: revision) { entry in
+            await streamed.append(entry)
+        }
+        let streamValues = await streamed.values
+        XCTAssertEqual(streamValues, entries)
+    }
+    func testRevisionPaginationCannotSwitchToAnotherTree() async throws {
+        let revision = String(repeating: "a", count: 40)
+        let first = try reply([["path": "a.txt", "type": "file", "size": 1]],
+                              headers: ["Link": "</api/datasets/owner/repo/tree/main?cursor=2>; rel=next"])
+        for streaming in [false, true] {
+            let mock = HubMock([first, try reply([])])
+            do {
+                let client = NativeHubClient(token: nil, transport: mock)
+                if streaming { try await client.streamTree(repo: repo, revision: revision) { _ in } }
+                else { _ = try await client.tree(repo: repo, revision: revision) }
+                XCTFail("A revision switch must reject the comparison")
+            } catch NativeHubError.invalidResponse { }
+            let calls = await mock.calls; XCTAssertEqual(calls.count, 1)
+        }
+    }
+    func testParentGuardIsInCommitHeaderAndConflictsAreNotRetried() async throws {
+        let parent = String(repeating: "a", count: 40), next = String(repeating: "b", count: 40)
+        let bytes = Data("abc".utf8)
+        let addition = NativeCommitFile(descriptor: file(bytes), content: bytes)
+        let mock = HubMock([try reply(["commitOid": next])])
+        _ = try await NativeHubClient(token: nil, transport: mock).commit(repo: repo, additions: [addition], expectedParent: parent)
+        let calls = await mock.calls
+        let line = try XCTUnwrap(calls.first?.request.httpBody?.split(separator: 10).first)
+        let header = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line)) as? [String: Any])
+        XCTAssertEqual((header["value"] as? [String: String])?["parentCommit"], parent)
+        let conflict = HubMock([try reply([:], status: 409), try reply(["commitOid": next])])
+        do { _ = try await NativeHubClient(token: nil, transport: conflict).commit(repo: repo, additions: [addition], expectedParent: parent); XCTFail() }
+        catch NativeHubError.http(let status, _) { XCTAssertEqual(status, 409) }
+        let attempts = await conflict.calls; XCTAssertEqual(attempts.count, 1)
+    }
+    func testInvalidRevisionAndParentNeverSendARequest() async throws {
+        let mock = HubMock([])
+        let guarded = NativeHubClient(token: nil, transport: mock)
+        do { _ = try await guarded.tree(repo: repo, revision: "../main"); XCTFail() }
+        catch NativeHubError.invalidInput { }
+        do { _ = try await guarded.commit(repo: repo, additions: [], expectedParent: "short"); XCTFail() }
+        catch NativeHubError.invalidInput { }
+        let calls = await mock.calls; XCTAssertTrue(calls.isEmpty)
+    }
+    func testMalformedCommitRevisionNeverCountsAsAcknowledged() async throws {
+        let mock = HubMock([try reply(["commitOid": String(repeating: "a", count: 41)])])
+        let bytes = Data("abc".utf8)
+        do {
+            _ = try await NativeHubClient(token: nil, transport: mock).commit(
+                repo: repo, additions: [NativeCommitFile(descriptor: file(bytes), content: bytes)])
+            XCTFail("An incomplete object identity must not acknowledge a commit")
+        } catch NativeHubError.invalidResponse { }
+        let calls = await mock.calls; XCTAssertEqual(calls.count, 1)
     }
     func testDelegateBoundsStreamingResponses() async throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [LargeResponseProtocol.self]

@@ -11,6 +11,7 @@ enum AppPaths {
     #endif
     static let runtimeReady = true
     static let checkpoints = support.appendingPathComponent("native-uploads", isDirectory: true)
+    static let uploadPlans = support.appendingPathComponent("upload-plans", isDirectory: true)
 
 }
 
@@ -129,13 +130,4 @@ enum HubService {
             return try JSONDecoder().decode(T.self, from: data)
         }
     }
-}
-
-final class LineCollector: @unchecked Sendable {
-    private let lock = NSLock()
-    private var storage: [String] = []
-    var limit: Int?
-    init(limit: Int? = nil) { self.limit = limit }
-    func append(_ line: String) { lock.lock(); storage.append(line); if let limit, storage.count > limit { storage.removeFirst(storage.count - limit) }; lock.unlock() }
-    func lines() -> [String] { lock.lock(); defer { lock.unlock() }; return storage }
 }

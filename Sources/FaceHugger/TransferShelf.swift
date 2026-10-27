@@ -8,6 +8,7 @@ struct TransferShelf: View {
     @State private var showTransfers = false
     @State private var showLog = false
     @State private var showHistory = false
+    @State private var selectedReceipt: TransferReceipt?
     private let slate = Color(red: 0.11, green: 0.145, blue: 0.18)
     private let muted = Color(red: 0.73, green: 0.77, blue: 0.81)
     private let gold = Color(red: 0.965, green: 0.784, blue: 0.271)
@@ -17,7 +18,7 @@ struct TransferShelf: View {
         model.selectedJob ?? model.activeJob ?? model.jobs.last
     }
     private var listedJobs: [UploadJob] {
-        model.jobs.filter { showHistory ? $0.state == .completed : $0.state != .completed }
+        model.jobs.filter { $0.state != .completed }
     }
     private func recovery(_ job: UploadJob) -> UploadRecoveryHint {
         guard job.state != .running && job.state != .completed else { return .other }
@@ -52,16 +53,16 @@ struct TransferShelf: View {
                     Button("Stop", systemImage: "stop.circle") { model.stop() }
                         .help("Stop the active upload and pause the queue")
                 }
-                if !model.jobs.isEmpty {
+                if !model.jobs.isEmpty || !model.transferReceipts.isEmpty {
                     Button {
                         if model.selectedJobID == nil { model.selectedJobID = displayedJob?.id }
-                        showHistory = displayedJob?.state == .completed
+                        showHistory = displayedJob == nil || displayedJob?.state == .completed
                         showTransfers.toggle()
                     } label: {
-                        Label("Transfers · \(model.jobs.count)", systemImage: "list.bullet")
+                        Label("Transfers", systemImage: "list.bullet")
                     }
                     .popover(isPresented: $showTransfers, arrowEdge: .top) { transferList }
-                    .accessibilityHint("Open upload queue and completed history")
+                    .accessibilityHint("Open upload queue and saved transfer receipts")
                 }
             }
             .frame(height: 64)
@@ -83,6 +84,7 @@ struct TransferShelf: View {
         .background(slate)
         .environment(\.colorScheme, .dark)
         .sheet(isPresented: $showLog) { logSheet }
+        .sheet(item: $selectedReceipt) { receipt in TransferReceiptView(receipt: receipt) }
     }
 
     private func headline(_ job: UploadJob) -> String {
@@ -112,10 +114,22 @@ struct TransferShelf: View {
 
     @ViewBuilder
     private func activity(_ job: UploadJob) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if job.state == .running, let activity = model.transferActivity[job.id] {
+                TransferActivityView(activity: activity)
+            }
+            activityDetails(job)
+        }
+    }
+
+    @ViewBuilder
+    private func activityDetails(_ job: UploadJob) -> some View {
         let hint = recovery(job)
         if job.state == .completed {
+            let recorded = model.transferReceipts.first { $0.jobID == job.id && $0.outcome == .completed }?.progress
+            let allIgnored = (recorded?.total ?? 0) > 0 && recorded?.ignoredFiles == recorded?.total
             VStack(alignment: .leading, spacing: 9) {
-                Label("Files committed to Hugging Face", systemImage: "checkmark.circle.fill")
+                Label(allIgnored ? "No files uploaded; repository rules excluded them" : "Files confirmed on Hugging Face", systemImage: allIgnored ? "minus.circle" : "checkmark.circle.fill")
                     .foregroundStyle(Color(red: 0.545, green: 0.835, blue: 0.639))
                 Text(job.message).foregroundStyle(muted).textSelection(.enabled)
             }
@@ -128,14 +142,14 @@ struct TransferShelf: View {
             }
         } else if let progress = model.progress[job.id], job.state != .interrupted {
             VStack(alignment: .leading, spacing: 10) {
-                Text(job.state == .running ? "Live activity · stages overlap" : "Last reported this session")
+                Text(job.state == .running ? "File progress" : "Last reported this session")
                     .foregroundStyle(muted)
                 HStack(alignment: .top, spacing: 22) {
                     counter("Prepared", "\(progress.checked) / \(progress.total)")
                     counter("Uploaded or reused", "\(progress.uploaded) / \(progress.uploadTotal)", color: activityBlue)
-                    counter("Committed", "\(progress.committed)")
+                    counter("Confirmed remote", "\(progress.committed)")
                 }.monospacedDigit()
-                Text("\(progress.transferred) sent · \(progress.commits) commits")
+                Text("\(progress.transferred) of file content reported sent · \(progress.commits) commits")
                     .foregroundStyle(muted).monospacedDigit()
                 if job.state != .running {
                     Text("Committed files remain remote. Resume checks the source again.")
@@ -145,17 +159,19 @@ struct TransferShelf: View {
         } else {
             VStack(alignment: .leading, spacing: 9) {
                 if job.state == .running {
-                    HStack(spacing: 9) {
-                        ProgressView().controlSize(.small)
-                        Text(job.message).foregroundStyle(muted)
+                    if model.transferActivity[job.id] == nil {
+                        HStack(spacing: 9) {
+                            ProgressView().controlSize(.small)
+                            Text(job.message).foregroundStyle(muted)
+                        }
                     }
                 } else {
                     Text(job.message).foregroundStyle(muted).textSelection(.enabled)
                 }
                 if job.state == .interrupted {
-                    Text("Session counters and logs are not retained after relaunch. Resume checks local and remote files again; committed files remain on Hugging Face.")
+                    Text("Open the receipt for the last recorded results. Resume checks local and remote files again; confirmed commits remain on Hugging Face.")
                         .foregroundStyle(muted).fixedSize(horizontal: false, vertical: true)
-                } else if job.state != .queued {
+                } else if job.state != .queued && job.state != .running {
                     Text("Resume checks the source again. Keep its files unchanged to continue the same upload.")
                         .foregroundStyle(muted).fixedSize(horizontal: false, vertical: true)
                 }
@@ -177,6 +193,8 @@ struct TransferShelf: View {
                 Button("Stop upload", systemImage: "stop.fill") { model.stop() }
                     .buttonStyle(.borderedProminent).tint(gold).foregroundStyle(slate)
             } else if job.state != .completed {
+                Button("Review again…", systemImage: "doc.text.magnifyingglass") { model.reviewUpload(job.id) }
+                    .buttonStyle(.plain).foregroundStyle(gold)
                 if hint == .missingSource {
                     Button("Locate folder…", systemImage: "folder") { model.locateSource(for: job.id) }
                         .buttonStyle(.borderedProminent).tint(gold).foregroundStyle(slate)
@@ -192,6 +210,10 @@ struct TransferShelf: View {
             }
             Button("Open on Hugging Face", systemImage: "arrow.up.right.square") { NSWorkspace.shared.open(job.repo.url) }
                 .buttonStyle(.plain).foregroundStyle(gold)
+            if let receipt = model.transferReceipts.first(where: { $0.jobID == job.id && $0.outcome != .running }) {
+                Button("Receipt", systemImage: "doc.text") { selectedReceipt = receipt }
+                    .buttonStyle(.plain).foregroundStyle(gold)
+            }
             Button("Activity log", systemImage: "text.alignleft") { showLog = true }
                 .buttonStyle(.plain).foregroundStyle(gold)
                 .disabled(model.logs[job.id]?.isEmpty != false)
@@ -212,7 +234,9 @@ struct TransferShelf: View {
                 Text("Queue").tag(false)
                 Text("History").tag(true)
             }.pickerStyle(.segmented)
-            if listedJobs.isEmpty {
+            if showHistory {
+                TransferHistoryView(model: model)
+            } else if listedJobs.isEmpty {
                 ContentUnavailableView(showHistory ? "No completed uploads" : "Queue is empty", systemImage: showHistory ? "clock" : "tray")
                     .frame(maxWidth: .infinity, minHeight: 180)
             } else {
@@ -230,6 +254,7 @@ struct TransferShelf: View {
                         .tag(job.id)
                         .contextMenu {
                             if job.state != .running && job.state != .completed {
+                                Button("Review upload…") { model.reviewUpload(job.id) }
                                 Button(resumeLabel(job)) { model.resume(job.id) }
                                     .disabled(recovery(job) == .missingSource)
                                 if recovery(job) == .missingSource {
@@ -256,7 +281,7 @@ struct TransferShelf: View {
                 }.frame(height: 240)
             }
             HStack {
-                if let selected = model.selectedJob, selected.state != .running {
+                if !showHistory, let selected = model.selectedJob, selected.state != .running {
                     Button("Remove from list", role: .destructive) { model.remove(selected.id) }
                 }
                 Spacer()

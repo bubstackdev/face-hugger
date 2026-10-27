@@ -10,6 +10,15 @@ public struct NativeHubEntry: Sendable, Equatable {
     public let path: String
     public let size: Int64
     public let isDirectory: Bool
+    public let gitBlobOID: String?
+    public let lfsSHA256: String?
+    /// Opaque storage identity; it is not a SHA-256 content hash.
+    public let xetHash: String?
+    public init(path: String, size: Int64, isDirectory: Bool, gitBlobOID: String? = nil,
+                lfsSHA256: String? = nil, xetHash: String? = nil) {
+        self.path = path; self.size = size; self.isDirectory = isDirectory
+        self.gitBlobOID = gitBlobOID; self.lfsSHA256 = lfsSHA256; self.xetHash = xetHash
+    }
 }
 
 public struct NativeUploadDescriptor: Sendable, Equatable {
@@ -140,6 +149,10 @@ final class NativeURLSessionTransport: NSObject, NativeHTTPTransport, URLSession
             try await withCheckedThrowingContinuation { continuation in
                 let task: URLSessionTask
                 if let uploadFile { task = session.uploadTask(with: request, fromFile: uploadFile) }
+                else if let body = request.httpBody {
+                    var upload = request; upload.httpBody = nil
+                    task = session.uploadTask(with: upload, from: body)
+                }
                 else { task = session.dataTask(with: request) }
                 lock.lock()
                 pending[task.taskIdentifier] = Pending(continuation: continuation, onBytes: onBytes)
@@ -202,6 +215,9 @@ final class NativeURLSessionTransport: NSObject, NativeHTTPTransport, URLSession
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
         lock.lock(); let value = pending.removeValue(forKey: task.taskIdentifier); lock.unlock()
         guard let value else { return }
+        // Observe the task's actual final body count, including brief or failed sends
+        // that did not produce an intermediate progress callback. Never infer from size.
+        value.onBytes(task.countOfBytesSent)
         if let failure = value.failure { value.continuation.resume(throwing: failure); return }
         if let error {
             let code = (error as NSError).code
@@ -225,12 +241,17 @@ public final class NativeHubClient: Sendable {
     private let token: String?
     private let transport: any NativeHTTPTransport
     private let retryDelay: Duration
-    public init(token: String?, endpoint: URL = URL(string: "https://huggingface.co")!) {
+    private let onTransferEvent: @Sendable (NativeTransferEvent) -> Void
+    public init(token: String?, endpoint: URL = URL(string: "https://huggingface.co")!,
+                onTransferEvent: @escaping @Sendable (NativeTransferEvent) -> Void = { _ in }) {
         self.token = token; self.endpoint = endpoint
         transport = NativeURLSessionTransport(); retryDelay = .seconds(1)
+        self.onTransferEvent = onTransferEvent
     }
-    init(token: String?, endpoint: URL = URL(string: "https://huggingface.co")!, transport: any NativeHTTPTransport, retryDelay: Duration = .zero) {
+    init(token: String?, endpoint: URL = URL(string: "https://huggingface.co")!, transport: any NativeHTTPTransport, retryDelay: Duration = .zero,
+         onTransferEvent: @escaping @Sendable (NativeTransferEvent) -> Void = { _ in }) {
         self.token = token; self.endpoint = endpoint; self.transport = transport; self.retryDelay = retryDelay
+        self.onTransferEvent = onTransferEvent
     }
 
     static func isSafeHTTPS(_ url: URL) -> Bool {
@@ -273,7 +294,7 @@ public final class NativeHubClient: Sendable {
     }
     private func json(_ value: Any) throws -> Data { try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) }
 
-    private func request(_ url: URL, method: String = "GET", body: Data? = nil, contentType: String = "application/json", headers: [String: String] = [:], hubAuth: Bool = true, retryable: Bool = false, uploadFile: URL? = nil, onBytes: @escaping @Sendable (Int64) -> Void = { _ in }) async throws -> NativeHTTPResponse {
+    private func request(_ url: URL, method: String = "GET", body: Data? = nil, contentType: String = "application/json", headers: [String: String] = [:], hubAuth: Bool = true, retryable: Bool = false, uploadFile: URL? = nil, bodyKind: TransferBodyKind = .metadata, onBytes: @escaping @Sendable (Int64) -> Void = { _ in }) async throws -> NativeHTTPResponse {
         guard Self.isSafeHTTPS(url), !hubAuth || Self.sameOrigin(url, endpoint) else { throw NativeHubError.unsafeURL }
         var request = URLRequest(url: url)
         request.httpMethod = method; request.httpBody = body
@@ -287,35 +308,61 @@ public final class NativeHubClient: Sendable {
             request.setValue(value, forHTTPHeaderField: key)
         }
         if hubAuth, let token, !token.isEmpty { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
-        for attempt in 0..<(retryable ? 3 : 1) {
+        let id = UUID(), maximum = retryable ? 3 : 1
+        let observe = onTransferEvent
+        for attempt in 1...maximum {
             try Task.checkCancellation()
+            let info = TransferRequest(id: id, attempt: attempt, maximumAttempts: maximum, bodyKind: bodyKind)
+            observe(.started(info))
+            let response: NativeHTTPResponse
             do {
-                let response = try await transport.execute(request, uploadFile: uploadFile, onBytes: onBytes)
-                try Task.checkCancellation()
-                if (200..<300).contains(response.status) { return response }
-                if response.status == 404 && response.header("X-Error-Code") == "EntryNotFound" { throw NativeHubError.entryNotFound }
-                if retryable && attempt < 2 && ([408, 429].contains(response.status) || (500...599).contains(response.status)) {
-                    let seconds = min(30, max(0, Double(response.header("Retry-After") ?? "") ?? 0))
-                    try await Task.sleep(for: max(retryDelay * (1 << attempt), .seconds(seconds)))
-                    continue
+                response = try await transport.execute(request, uploadFile: uploadFile) { bytes in
+                    observe(.bodyBytes(requestID: id, attempt: attempt, cumulative: bytes))
+                    onBytes(bytes)
                 }
-                // Do not expose presigned URLs, request headers, or arbitrary echo
-                // bodies. Codes remain useful for authentication/retry guidance.
-                let message: String
-                switch response.status {
-                case 401: message = "Authentication failed. Check your Hugging Face token."
-                case 403: message = "Permission denied. Check the token's repository access."
-                case 404: message = "The repository or path was not found, or access is unavailable."
-                case 409: message = "The repository changed or the operation conflicts with existing content."
-                case 429: message = "The service rate limit was reached. Try again later."
-                default: message = "The service rejected the request."
-                }
-                throw NativeHubError.http(status: response.status, message: message)
-            } catch NativeHubError.network(let code) where retryable && attempt < 2 && [NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost, NSURLErrorCannotConnectToHost, NSURLErrorNotConnectedToInternet, NSURLErrorDNSLookupFailed].contains(code) {
-                try await Task.sleep(for: retryDelay * (1 << attempt))
+            } catch {
+                observe(.finished(requestID: id, attempt: attempt))
+                guard case NativeHubError.network(let code) = error, retryable, attempt < maximum,
+                      [NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost, NSURLErrorCannotConnectToHost,
+                       NSURLErrorNotConnectedToInternet, NSURLErrorDNSLookupFailed].contains(code) else { throw error }
+                let delay = TransferRetryPolicy.delay(base: retryDelay, failedAttempt: attempt, header: nil, now: Date())
+                try await waitToRetry(info, reason: code == NSURLErrorTimedOut ? .timeout : .connection, delay: delay)
+                continue
             }
+            observe(.finished(requestID: id, attempt: attempt))
+            try Task.checkCancellation()
+            if (200..<300).contains(response.status) { return response }
+            if response.status == 404 && response.header("X-Error-Code") == "EntryNotFound" { throw NativeHubError.entryNotFound }
+            if retryable && attempt < maximum && ([408, 429].contains(response.status) || (500...599).contains(response.status)) {
+                let delay = TransferRetryPolicy.delay(base: retryDelay, failedAttempt: attempt,
+                                                     header: response.header("Retry-After"), now: Date())
+                let reason: TransferRetryReason = response.status == 429 ? .rateLimit : response.status == 408 ? .timeout : .serverError
+                try await waitToRetry(info, reason: reason, delay: delay)
+                continue
+            }
+            let message: String
+            switch response.status {
+            case 401: message = "Authentication failed. Check your Hugging Face token."
+            case 403: message = "Permission denied. Check the token's repository access."
+            case 404: message = "The repository or path was not found, or access is unavailable."
+            case 409: message = "The repository changed or the operation conflicts with existing content."
+            case 429: message = "The service rate limit was reached. Try again later."
+            default: message = "The service rejected the request."
+            }
+            throw NativeHubError.http(status: response.status, message: message)
         }
         throw NativeHubError.invalidResponse("The request did not complete.")
+    }
+
+    private func waitToRetry(_ request: TransferRequest, reason: TransferRetryReason, delay: Duration) async throws {
+        let retry = TransferRetry(request: request, reason: reason,
+            resumesAt: Date().addingTimeInterval(TransferRetryPolicy.seconds(delay)))
+        onTransferEvent(.waiting(retry))
+        do { try await Task.sleep(for: delay) }
+        catch {
+            onTransferEvent(.waitCancelled(requestID: request.id, attempt: request.attempt))
+            throw error
+        }
     }
 
     public func whoami() async throws -> NativeHubIdentity {
@@ -326,7 +373,7 @@ public final class NativeHubClient: Sendable {
         return NativeHubIdentity(name: name, organizations: organizations)
     }
 
-    private func pages(_ initial: URL) async throws -> [[String: Any]] {
+    private func pages(_ initial: URL, expectedPath: String? = nil) async throws -> [[String: Any]] {
         var next: URL? = initial
         var visited = Set<URL>()
         var rows: [[String: Any]] = []
@@ -334,6 +381,9 @@ public final class NativeHubClient: Sendable {
         while let url = next {
             try Task.checkCancellation()
             guard Self.sameOrigin(url, endpoint), url.path.hasPrefix("/api/"), visited.insert(url).inserted, visited.count <= 1000 else { throw NativeHubError.invalidResponse("Unsafe or cyclic Hub pagination.") }
+            if let expectedPath, Data(url.path.utf8) != Data(expectedPath.utf8) {
+                throw NativeHubError.invalidResponse("Repository pagination changed the requested path or revision.")
+            }
             let response = try await request(url, retryable: true)
             received += response.data.count
             guard received <= 32 * 1024 * 1024 else { throw NativeHubError.responseTooLarge }
@@ -386,49 +436,81 @@ public final class NativeHubClient: Sendable {
         let value = try object(response.data)
         guard value["id"] as? String == repo.name else { throw NativeHubError.invalidResponse("Repository identity changed.") }
         guard let sha = value["sha"], !(sha is NSNull) else { return nil }
-        guard let oid = sha as? String, oid.range(of: "^[a-fA-F0-9]{40,64}$", options: .regularExpression) != nil else { throw NativeHubError.invalidResponse("Invalid branch revision.") }
+        guard let oid = sha as? String, Self.isFullOID(oid) else { throw NativeHubError.invalidResponse("Invalid branch revision.") }
         return oid
     }
 
-    public func tree(repo: HubRepo, path: String = "", recursive: Bool = false, allowMissingPath: Bool = false) async throws -> [NativeHubEntry] {
+    public func tree(repo: HubRepo, path: String = "", recursive: Bool = false, allowMissingPath: Bool = false,
+                     revision: String = "main") async throws -> [NativeHubEntry] {
         try Self.validatePath(path, allowEmpty: true)
+        try Self.validateTreeRevision(revision)
         if allowMissingPath && !path.isEmpty { _ = try await info(repo: repo) }
-        let url = try route(["api", repo.kind.plural] + repoParts(repo) + ["tree", "main"] + path.split(separator: "/").map(String.init), query: [.init(name: "recursive", value: recursive ? "true" : "false"), .init(name: "expand", value: "false")])
+        let url = try route(["api", repo.kind.plural] + repoParts(repo) + ["tree", revision] + path.split(separator: "/").map(String.init), query: [.init(name: "recursive", value: recursive ? "true" : "false"), .init(name: "expand", value: "false")])
         let rows: [[String: Any]]
-        do { rows = try await pages(url) }
+        do { rows = try await pages(url, expectedPath: url.path) }
         catch NativeHubError.entryNotFound where allowMissingPath && !path.isEmpty {
             // Confirm the repository still exists: a removed/private repo is not
             // an empty destination. Only path absence may be treated as empty.
             _ = try await info(repo: repo)
             return []
         }
-        return try rows.map { row in
-            guard let path = row["path"] as? String, let type = row["type"] as? String, ["file", "directory"].contains(type) else { throw NativeHubError.invalidResponse("Malformed repository tree.") }
-            try Self.validatePath(path)
-            let size = (row["size"] as? NSNumber)?.int64Value ?? 0
-            guard size >= 0 else { throw NativeHubError.invalidResponse("Invalid remote file size.") }
-            return NativeHubEntry(path: path, size: size, isDirectory: type == "directory")
+        return try rows.map(Self.treeEntry)
+    }
+
+    private static func validateTreeRevision(_ revision: String) throws {
+        guard revision == "main" || isFullOID(revision) else {
+            throw NativeHubError.invalidInput("Use main or a complete commit revision for repository comparison.")
         }
+    }
+    private static func isFullOID(_ value: String) -> Bool {
+        value.range(of: "^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$", options: .regularExpression) != nil
+    }
+    private static func treeEntry(_ row: [String: Any]) throws -> NativeHubEntry {
+        guard let path = row["path"] as? String, let type = row["type"] as? String,
+              ["file", "directory"].contains(type) else { throw NativeHubError.invalidResponse("Malformed repository tree entry.") }
+        try validatePath(path)
+        let size = (row["size"] as? NSNumber)?.int64Value ?? 0
+        guard size >= 0 else { throw NativeHubError.invalidResponse("Invalid remote file size.") }
+        var blob: String?, lfs: String?
+        if type == "file" {
+            if let raw = row["oid"], !(raw is NSNull) {
+                guard let value = raw as? String, isFullOID(value) else { throw NativeHubError.invalidResponse("Invalid Git blob identity.") }
+                blob = value.lowercased()
+            }
+            if let raw = row["lfs"], !(raw is NSNull) {
+                guard let value = raw as? [String: Any], let hash = value["oid"] as? String,
+                      hash.range(of: "^[a-fA-F0-9]{64}$", options: .regularExpression) != nil else {
+                    throw NativeHubError.invalidResponse("Invalid LFS content identity.")
+                }
+                lfs = hash.lowercased()
+            }
+        }
+        return NativeHubEntry(path: path, size: size, isDirectory: type == "directory",
+                              gitBlobOID: blob, lfsSHA256: lfs, xetHash: row["xetHash"] as? String)
     }
 
     /// Full recursive preflight without accumulating entries in memory. Each page
     /// remains bounded. Cyclic pagination fails, and cancellation propagates.
     public func streamTree(repo: HubRepo, path: String = "", recursive: Bool = true, onEntry: @escaping @Sendable (NativeHubEntry) async throws -> Void) async throws {
+        try await streamTree(repo: repo, path: path, recursive: recursive, revision: "main", onEntry: onEntry)
+    }
+
+    public func streamTree(repo: HubRepo, path: String = "", recursive: Bool = true, revision: String,
+                           onEntry: @escaping @Sendable (NativeHubEntry) async throws -> Void) async throws {
         try Self.validatePath(path, allowEmpty: true)
-        var next: URL? = try route(["api", repo.kind.plural] + repoParts(repo) + ["tree", "main"] + path.split(separator: "/").map(String.init), query: [.init(name: "recursive", value: recursive ? "true" : "false"), .init(name: "expand", value: "false")])
+        try Self.validateTreeRevision(revision)
+        let initial = try route(["api", repo.kind.plural] + repoParts(repo) + ["tree", revision] + path.split(separator: "/").map(String.init), query: [.init(name: "recursive", value: recursive ? "true" : "false"), .init(name: "expand", value: "false")])
+        var next: URL? = initial
         var visited = Set<URL>()
         while let url = next {
             try Task.checkCancellation()
             guard Self.sameOrigin(url, endpoint), url.path.hasPrefix("/api/"), visited.insert(url).inserted else { throw NativeHubError.invalidResponse("Unsafe or cyclic Hub pagination.") }
+            guard Data(url.path.utf8) == Data(initial.path.utf8) else { throw NativeHubError.invalidResponse("Repository pagination changed the requested path or revision.") }
             let response = try await request(url, retryable: true)
             guard let rows = try JSONSerialization.jsonObject(with: response.data) as? [[String: Any]] else { throw NativeHubError.invalidResponse("Malformed repository tree page.") }
             for row in rows {
                 try Task.checkCancellation()
-                guard let path = row["path"] as? String, let type = row["type"] as? String, ["file", "directory"].contains(type) else { throw NativeHubError.invalidResponse("Malformed repository tree entry.") }
-                try Self.validatePath(path)
-                let size = (row["size"] as? NSNumber)?.int64Value ?? 0
-                guard size >= 0 else { throw NativeHubError.invalidResponse("Invalid remote file size.") }
-                try await onEntry(NativeHubEntry(path: path, size: size, isDirectory: type == "directory"))
+                try await onEntry(Self.treeEntry(row))
             }
             next = try Self.nextPage(response.header("Link"), relativeTo: url)
         }
@@ -514,7 +596,7 @@ public final class NativeHubClient: Sendable {
                     try output.close()
                 } catch { try? output.close(); throw error }
                 let offset = completed
-                let partResponse = try await request(url, method: "PUT", contentType: "application/octet-stream", hubAuth: false, retryable: true, uploadFile: part) { sent in onBytes(offset + min(length, sent)) }
+                let partResponse = try await request(url, method: "PUT", contentType: "application/octet-stream", hubAuth: false, retryable: true, uploadFile: part, bodyKind: .file) { sent in onBytes(offset + min(length, sent)) }
                 guard let etag = partResponse.header("ETag"), !etag.isEmpty else { throw NativeHubError.invalidResponse("The storage service omitted a multipart ETag.") }
                 completions.append(["partNumber": number, "etag": etag])
                 completed += length; onBytes(completed)
@@ -523,7 +605,7 @@ public final class NativeHubClient: Sendable {
             let completion = try json(["oid": descriptor.sha256, "parts": completions])
             _ = try await request(uploadURL, method: "POST", body: completion, hubAuth: Self.sameOrigin(uploadURL, endpoint))
         } else {
-            _ = try await request(uploadURL, method: "PUT", contentType: "application/octet-stream", headers: headers, hubAuth: false, retryable: true, uploadFile: file) { sent in onBytes(min(descriptor.size, sent)) }
+            _ = try await request(uploadURL, method: "PUT", contentType: "application/octet-stream", headers: headers, hubAuth: false, retryable: true, uploadFile: file, bodyKind: .file) { sent in onBytes(min(descriptor.size, sent)) }
         }
         if let rawVerify = actions["verify"], !(rawVerify is NSNull) {
             guard let verify = rawVerify as? [String: Any] else { throw NativeHubError.invalidResponse("Malformed LFS verification instructions.") }
@@ -544,8 +626,21 @@ public final class NativeHubClient: Sendable {
     }
 
     public func commit(repo: HubRepo, additions: [NativeCommitFile], deletions: [String] = [], message: String = "Upload files with Face Hugger") async throws -> NativeCommitResult {
+        try await commitRequest(repo: repo, additions: additions, deletions: deletions, message: message, expectedParent: nil)
+    }
+
+    public func commit(repo: HubRepo, additions: [NativeCommitFile], deletions: [String] = [],
+                       message: String = "Upload files with Face Hugger", expectedParent: String) async throws -> NativeCommitResult {
+        guard Self.isFullOID(expectedParent) else { throw NativeHubError.invalidInput("The expected parent must be a complete commit revision.") }
+        return try await commitRequest(repo: repo, additions: additions, deletions: deletions, message: message, expectedParent: expectedParent)
+    }
+
+    private func commitRequest(repo: HubRepo, additions: [NativeCommitFile], deletions: [String], message: String,
+                               expectedParent: String?) async throws -> NativeCommitResult {
         guard !additions.isEmpty || !deletions.isEmpty, additions.count + deletions.count <= 256, message.utf8.count <= 1024 else { throw NativeHubError.invalidInput("Commit batches must contain 1 to 256 changes and a short message.") }
-        var body = try json(["key": "header", "value": ["summary": message, "description": ""]]); body.append(10)
+        var header = ["summary": message, "description": ""]
+        if let expectedParent { header["parentCommit"] = expectedParent }
+        var body = try json(["key": "header", "value": header]); body.append(10)
         var paths = Set<Data>()
         for file in additions {
             try descriptorCheck(file.descriptor)
@@ -566,9 +661,9 @@ public final class NativeHubClient: Sendable {
             guard paths.insert(Data(path.utf8)).inserted else { throw NativeHubError.invalidInput("Conflicting commit paths.") }
             body.append(try json(["key": "deletedFile", "value": ["path": path]])); body.append(10)
         }
-        let response = try await request(route(["api", repo.kind.plural] + repoParts(repo) + ["commit", "main"]), method: "POST", body: body, contentType: "application/x-ndjson")
+        let response = try await request(route(["api", repo.kind.plural] + repoParts(repo) + ["commit", "main"]), method: "POST", body: body, contentType: "application/x-ndjson", bodyKind: .commit)
         let value = try object(response.data)
-        guard let oid = value["commitOid"] as? String, oid.range(of: "^[a-fA-F0-9]{40,64}$", options: .regularExpression) != nil else { throw NativeHubError.invalidResponse("The commit was not acknowledged with a valid revision. Refresh the repository before retrying.") }
+        guard let oid = value["commitOid"] as? String, Self.isFullOID(oid) else { throw NativeHubError.invalidResponse("The commit was not acknowledged with a valid revision. Refresh the repository before retrying.") }
         let url = try route((repo.kind == .dataset ? ["datasets"] : []) + repoParts(repo) + ["commit", oid])
         return NativeCommitResult(commitOID: oid, url: url)
     }

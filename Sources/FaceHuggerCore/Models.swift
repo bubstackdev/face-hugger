@@ -35,6 +35,11 @@ public struct UploadProgress: Decodable, Sendable {
         case uploadTotal = "upload_total"
     }
     public var summary: String { "\(checked)/\(total) checked · \(uploaded)/\(uploadTotal) uploaded or reused · \(committed) committed" }
+    public init(native: NativeUploadProgress) {
+        checked = native.checked; total = native.total; uploaded = native.uploaded
+        uploadTotal = native.uploadTotal; committed = native.committed; commits = native.commits
+        transferred = ByteCountFormatter.string(fromByteCount: native.transferredBytes, countStyle: .file)
+    }
 }
 
 public struct UploadJob: Identifiable, Codable, Sendable {
@@ -51,6 +56,7 @@ public struct UploadJob: Identifiable, Codable, Sendable {
     public var message: String
     public var fileCount: Int
     public var byteCount: Int64
+    public var planID: UUID?
     public init(source: String, repo: HubRepo, destination: String = "", includes: [String] = [], excludes: [String] = [], fileCount: Int = 0, byteCount: Int64 = 0, sourceBookmark: Data? = nil) {
         self.sourceBookmark = sourceBookmark
         id = UUID(); self.source = source; self.repo = repo; self.destination = destination

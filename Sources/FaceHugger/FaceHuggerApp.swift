@@ -3,7 +3,28 @@ import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    var model: AppModel?
+    var model: AppModel? {
+        didSet {
+            guard let model else { return }
+            if !pendingFolders.isEmpty { let folders = pendingFolders; pendingFolders = []; model.receiveFolders(folders) }
+            if let pendingError { model.error = pendingError; self.pendingError = nil }
+        }
+    }
+    var showWorkspace: (() -> Void)?
+    private var pendingFolders: [FolderEntry] = []
+    private var pendingError: String?
+    func application(_ application: NSApplication, open urls: [URL]) {
+        do {
+            let folders = try FolderEntry.capture(urls)
+            if let model { model.receiveFolders(folders) }
+            else { pendingFolders.append(contentsOf: folders) }
+        } catch {
+            if let model { model.error = error.localizedDescription }
+            else { pendingError = error.localizedDescription }
+        }
+        showWorkspace?()
+        application.activate(ignoringOtherApps: true)
+    }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model else { return .terminateNow }
@@ -16,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard alert.runModal() == .alertSecondButtonReturn else { return .terminateCancel }
         }
         guard model.activeJob != nil else {
+            model.cancelUploadReview()
             model.datasetCard?.cancel()
             return .terminateNow
         }
@@ -23,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.informativeText = "You can resume this upload next time you open Face Hugger. Files already committed will remain on Hugging Face. Closing the window instead keeps your upload running."
         alert.addButton(withTitle: "Keep uploading"); alert.addButton(withTitle: "Stop and quit")
         if alert.runModal() == .alertSecondButtonReturn {
+            model.cancelUploadReview()
             model.datasetCard?.cancel()
             model.stop()
             Task { @MainActor in
@@ -41,9 +64,7 @@ struct FaceHuggerApp: App {
     @State private var model = AppModel()
     var body: some Scene {
         Window("Face Hugger", id: "main") {
-            MainView(model: model)
-                .tint(BenchTheme.transfer)
-                .onAppear { delegate.model = model }
+            WorkspaceRoot(model: model, delegate: delegate).tint(BenchTheme.transfer)
         }
         .defaultSize(width: 1240, height: 820)
         .windowStyle(.hiddenTitleBar)
@@ -59,6 +80,18 @@ struct FaceHuggerApp: App {
         }
         MenuBarExtra("Face Hugger", systemImage: model.activeJob == nil ? "tray.and.arrow.up" : "arrow.up.circle.fill") {
             MenuContent(model: model)
+        }
+    }
+}
+
+private struct WorkspaceRoot: View {
+    let model: AppModel
+    let delegate: AppDelegate
+    @Environment(\.openWindow) private var openWindow
+    var body: some View {
+        MainView(model: model).onAppear {
+            delegate.showWorkspace = { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
+            delegate.model = model
         }
     }
 }

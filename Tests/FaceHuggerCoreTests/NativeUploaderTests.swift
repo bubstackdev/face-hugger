@@ -32,7 +32,7 @@ private actor UploadMock: NativeUploadTransport {
     func commit(repo: HubRepo, additions: [NativeCommitFile], deletions: [String], message: String) async throws -> NativeCommitResult {
         attempts += 1; batchSizes.append(additions.count)
         if attempts == failAttempt { throw URLError(.networkConnectionLost) }
-        commits += 1; head = "commit-\(commits)"
+        commits += 1; head = String(format: "%040x", commits)
         return NativeCommitResult(commitOID: ambiguous ? "" : head!, url: repo.url)
     }
 }
@@ -63,6 +63,23 @@ struct NativeUploaderTests {
         #expect(counts.0 == 2); #expect(counts.1 == 3); #expect(counts.2 == 3); #expect(events.count == 1)
         try await NativeUploader.upload(job: job, transport: mock, checkpointDirectory: checkpoints, maximumFilesPerCommit: 1, onEvent: events.receive)
         #expect(await mock.counts().1 == 3)
+    }
+    @Test func acknowledgedCommitsReachHistoryBeforeALaterBatchFails() async throws {
+        let (base, checkpoints, job) = try fixture(); defer { try? FileManager.default.removeItem(at: base) }
+        let archive = TransferHistoryArchive(url: base.appendingPathComponent("history.json"))
+        let recorder = try TransferHistoryStore(archive: archive).begin(job: job)
+        let mock = UploadMock()
+        await mock.configure(fail: 2)
+        await #expect(throws: URLError.self) {
+            try await NativeUploader.upload(job: job, transport: mock, checkpointDirectory: checkpoints,
+                                            maximumFilesPerCommit: 1) { event in try? recorder.record(event) }
+        }
+        #expect(!recorder.persistenceFailed)
+        // Simulate process loss without finalization; acknowledgement was already persisted.
+        let recovered = try TransferHistoryStore(archive: archive)
+        #expect(recovered.receipts.first?.outcome == .interrupted)
+        #expect(recovered.receipts.first?.confirmedCommitCount == 1)
+        #expect(recovered.receipts.first?.confirmedFileCount == 1)
     }
     @Test func foreignRemoteHeadInvalidatesAllOldReceiptsEvenAfterInterruptedReplay() async throws {
         let (base, checkpoints, job) = try fixture(); defer { try? FileManager.default.removeItem(at: base) }
